@@ -1,23 +1,17 @@
-import time
 from datetime import datetime
 import random
 import numpy as np
-from tqdm import tqdm
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-import torchvision
-import torchvision.transforms as transforms
-
-from data_loading.dataset_loader import DatasetLoader
-from model_architectures.model_constructor import ModelConstructor
-from training import ModelTrainer
-from neural_collapse_analyzer import NeuralCollapseAnalyzer
 
 from argparser import get_args
 from experiment_logger import ExperimentLogger
+from data_loading.dataset_loader import DatasetLoader
+from model_architectures.model_constructor import ModelConstructor
+from training.vision_trainer import VisionTrainer
+
 
 def main():
     
@@ -40,17 +34,17 @@ def main():
         "learning_rate": 0.01,
         "weight_decay": 0,
         "model": "simple_cnn",
+        "pretrained": True, # Only for downloaded models
         "dataset": "CIFAR10",
-        "analysis_frequency": 5, # NC analysis every X epochs
-        "criterion": str(nn.CrossEntropyLoss()), # if args.criterion == "cross_entropy" else nn.KLDivLoss,
+        "nc_freq": 5, # NC analysis every X epochs
+        "criterion": str(nn.CrossEntropyLoss()), # if args.criterion == "cross_entropy" else nn.,
         "device": torch.device("cuda" if torch.cuda.is_available() and args.device == "cuda" else "cpu"),
         "now": datetime.now().strftime("%m.%d.%Y_%H.%M.%S"),
         "save": False
     }
-    
     config.update(vars(args))
     
-    print('Updated configuration:')
+    print('Updated configuration:\n')
     print(config)
     
     if config["save"]:
@@ -58,14 +52,15 @@ def main():
     else:
         logger = None
         
-    # --- 1. Data Loading ---
+    # Data Loading
     dataset_loader = DatasetLoader()
-    trainloader, analysis_loader, config['num_classes'] = dataset_loader.get_data(config)
+    train_loader, analysis_loader, config['num_classes'] = dataset_loader.get_data(config)
 
     # Model
-    construction = ModelConstructor.get_model(config)
-    if isinstance(construction, tuple):
-        model, tokenizer = construction
+    model = ModelConstructor.get_model(config)
+
+    if isinstance(model, tuple):
+        model, tokenizer = model
 
     criterion = nn.CrossEntropyLoss()
     # optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=0.9, weight_decay=config['weight_decay'])
@@ -80,17 +75,25 @@ def main():
     )
     config["optimizer"] = str(optimizer)
     
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['epochs'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=config['epochs']
+    )
     config["scheduling"] = str(scheduler)
 
     if config["save"]:
         logger.update_config(config)
     
-    # Training Loop
-    trained_model = ModelTrainer(model, trainloader, analysis_loader,  config, logger).train(
-        criterion, optimizer, scheduler
-    )
-    
+    # Training
+    if config["task"] == "cv":
+        trainer = VisionTrainer(model, train_loader, analysis_loader,  config, logger)
+    # elif config["task"] == "nlp":
+    #     trainer = LanguageTrainer(model, train_loader, analysis_loader, config, logger)
+
+    trained_model = trainer.train(criterion, optimizer, scheduler)
+
+    # print(trained_model)
+    # print(model.modules())
+
 
 if __name__ == '__main__':
     main()

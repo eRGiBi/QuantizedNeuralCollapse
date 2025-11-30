@@ -2,13 +2,18 @@ import time
 import tqdm
 
 from experiment_logger import ExperimentLogger
-from neural_collapse_analyzer import NeuralCollapseAnalyzer
+from collapse_analysis.vision_collapse_analyzer import VisionNeuralCollapseAnalyzer
+from collapse_analysis.language_collapse_analyzer import LanguageNeuralCollapseAnalyzer
+
+
+# DEPRECATED
+
 
 class ModelTrainer:
     """A class to train a PyTorch model."""
-    def __init__(self, model, trainloader, analysis_loader, config: dict, logger: ExperimentLogger):
+    def __init__(self, model, train_loader, analysis_loader, config: dict, logger: ExperimentLogger):
         self.model = model
-        self.trainloader = trainloader
+        self.train_loader = train_loader
         self.analysis_loader = analysis_loader
         self.device = config["device"]
         self.logger = logger
@@ -17,22 +22,28 @@ class ModelTrainer:
         
         # Detect model type
         self.model_type = config.get("task", "cv")
-        
+
         # Gradient accumulation for limited memory
         self.grad_accumulation_steps = config.get("grad_accumulation_steps", 1)
 
         # For LLMs: max sequence length for truncation
         self.max_seq_length = config.get("max_seq_length", None)
-        
-        self.nc_analyzer = NeuralCollapseAnalyzer(
-            model, analysis_loader, self.config["num_classes"], self.device
-        )
-        
+
+        if config["task"] == "cv":
+            self.nc_analyzer = VisionNeuralCollapseAnalyzer(
+                model, analysis_loader, self.config["num_classes"], self.device
+            )
+        elif config["task"] == "nlp":
+            self.nc_analyzer = LanguageNeuralCollapseAnalyzer(
+                model, analysis_loader, self.config["num_classes"], self.device
+            )
+
+
     def _process_batch_cv(self, inputs, labels):
         """Process a batch for computer vision models."""
         outputs = self.model(inputs)
         return outputs, labels
-    
+
     def _process_batch_llm(self, batch):
         """Process a batch for language models."""
         # Expect batch to be dict with 'input_ids', 'attention_mask', 'labels'
@@ -56,7 +67,7 @@ class ModelTrainer:
             logits = outputs
 
         return logits, labels
-    
+
     def _compute_loss_and_accuracy_llm(self, logits, labels, criterion):
         """Compute loss and accuracy for LLMs."""
         # Shift logits and labels for next-token prediction
@@ -98,19 +109,19 @@ class ModelTrainer:
             nn.Module: The trained model.
         """
         model = self.model
-        trainloader = self.trainloader
+        train_loader = self.train_loader
         device = self.device
         
         epochs = self.config["epochs"]
         analysis_freq = self.config['analysis_freq']
-        
+
         start_time = time.time()
 
         for epoch in range(epochs):
             model.train()
-     
+
             running_loss, correct, total = 0.0, 0, 0
-            
+
             progress_bar = tqdm.tqdm(
                 trainloader,
                 desc=f"Epoch {epoch+1}/{epochs}",

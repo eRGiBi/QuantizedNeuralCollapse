@@ -1,21 +1,27 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from tqdm import tqdm
-import numpy as np
 
 from experiment_logger import ExperimentLogger
 
 
-class NeuralCollapseAnalyzer:
+class BaseNeuralCollapseAnalyzer:
     """Analyze a neural network for Neural Collapse."""
 
-    def __init__(self, model, data_loader, num_classes, logger: ExperimentLogger, device='cuda', ):
-        self.model = model
+    def __init__(
+            self,
+            # model,
+            data_loader,
+            num_classes,
+            # logger: ExperimentLogger,
+            device='cuda'
+    ):
+        # self.model = model
         self.data_loader = data_loader
         self.num_classes = num_classes
         self.device = device
-        self.model.to(self.device)
-        self.model.eval()
+        # self.model.to(self.device)
+        # self.model.eval()
 
         self.features = None
         self.labels = None
@@ -23,13 +29,53 @@ class NeuralCollapseAnalyzer:
         self.Sw = None
         self.Sb = None
 
-    def _extract_penultimate_features(self):
+
+    def analyze(
+            self,
+            model,
+            train_loader,
+            test_loader,
+            ood_loader,
+            device
+    ):
+        """"""
+        pass
+
+    def get_last_layer(self, model):
+        last_linear_layer = None
+
+        if hasattr(model, 'fc') and isinstance(
+                model.fc, torch.nn.Linear
+        ):
+            return model.fc, model.fc.weight
+
+        elif hasattr(model, 'classifier'):
+            return model.classifier[-1], model.classifier[-1].weight
+
+        else:
+
+            for name, module in model.named_modules():
+                if isinstance(module, nn.Linear):
+                    last_linear_layer = module
+
+            if last_linear_layer is not None:
+                if hasattr(last_linear_layer, 'weight') and last_linear_layer.weight is not None:
+                    return last_linear_layer, last_linear_layer.weight
+
+                else:
+                    raise ValueError(f"Last identified nn.Linear layer ({name}) has no weights.")
+            else:
+                raise
+
+            weights = model[-1].weight
+
+    def _extract_penultimate_features(self, model):
         """Extract features from the penultimate layer of the network for the given dataset."""
         penultimate_features_list = []
         labels_list = []
         
         try:
-            penultimate_layer = self.model.penultimate
+            penultimate_layer = model.penultimate
         except AttributeError:
             print("Error: The model does not have a layer named 'penultimate'.")
             return
@@ -42,7 +88,7 @@ class NeuralCollapseAnalyzer:
         with torch.no_grad():
             for data, targets in self.data_loader:
                 data = data.to(self.device)
-                self.model(data)
+                model(data)
                 labels_list.append(targets.cpu())
 
         hook.remove()
@@ -197,24 +243,5 @@ class NeuralCollapseAnalyzer:
         
         return agreement.item()
 
-    def analyze(self):
-        """"""
-        print("--- Running Neural Collapse Analysis ---")
 
-        metrics = {}
-        
-        _, metrics['NC1_Collapse_Ratio'] = self.test_nc1_variability_collapse()
-        
-        metrics['NC2_ETF_Means_Deviation'] = self.test_nc2_etf_class_means()
-        
-        dev_W, cos_sim = self.test_nc3_self_dual_alignment()
-        
-        metrics['NC3_ETF_Weights_Deviation'] = dev_W
-        metrics['NC3_Alignment_Cosine_Sim'] = cos_sim
-        
-        metrics['NC4_NCM_Agreement'] = self.test_nc4_nearest_class_mean()
-        
-        print(f"Analysis Summary: {metrics}")
-        
-        return metrics
     

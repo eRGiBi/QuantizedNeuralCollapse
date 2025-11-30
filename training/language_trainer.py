@@ -1,7 +1,8 @@
+from experiment_logger import ExperimentLogger
 from training.base_trainer import BaseModelTrainer
 
 
-class LLMTrainer(BaseModelTrainer):
+class LanguageTrainer(BaseModelTrainer):
     """Trainer for language models."""
 
     def __init__(
