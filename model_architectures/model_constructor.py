@@ -8,8 +8,6 @@ from model_architectures.simple_cnn import SimpleCNN
 
 class ModelWrapper(nn.Module):
     """Make standard torchvision models compatible with the NC analyzer.
-    
-    Renames the final layer to 'classifier' and adds a 'penultimate' layer.
     """
     def __init__(self, base_model, num_classes, feature_dim=512):
         super().__init__()
@@ -55,12 +53,36 @@ class ModelConstructor:
                         #  input_channels=input_channels
                         ).to(config["device"]
                     )
+
+                case 'mobilenet':
+                    model = torchvision_models.mobilenet_v3_large(
+                        weights=None if not config["pretrained"] else
+                            torchvision_models.MobileNet_V3_Large_Weights.IMAGENET1K_V2,
+                        progress=True
+                    )
+                    in_features = model.classifier[-1].in_features
+                    model.classifier[-1] = nn.Linear(in_features, config["num_classes"])
+
+                    return model
+
+                case 'convnextt':
+                    model = torchvision_models.convnext_tiny(
+                        weights=None if not config["pretrained"] else
+                        torchvision_models.ConvNeXt_Tiny_Weights.IMAGENET1K_V1,
+                        progress=True
+                    )
+
+                    in_features = model.classifier[-1].in_features
+                    model.classifier[-1] = nn.Linear(in_features, config["num_classes"])
+
+                    return model
     
                 case 'resnet18':
                     
                     print("Using torchvision ResNet-18 model.")
                     base_model = torchvision_models.resnet18(weights=None) # weights=None for training from scratch
-                    # Adapt for MNIST if necessary
+
+                    # Adaption if necessary
                     if input_channels == 1:
                         base_model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
                         
