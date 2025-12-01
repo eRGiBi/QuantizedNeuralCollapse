@@ -8,22 +8,29 @@ the network’s internal representations align into elegant, low-dimensional pat
 
 This project aims to study the interaction of the neural collapse phenomenon with quantization.
 
+---
+
 ### Goals:
 - Experimentally investigate how quantized networks behave in the post–zero-loss regime 
 - Utilize geometric and combinatorial tools to understand the structure of both neural collapse and quantization
 
+---
 
 ## Installation
 
-uv
+Install dependencies specified in the included uv lockfile to in virtual env, for example:
 
+    uv init
+
+    uv sync 
+
+---
 
 ## Usage
 
 ### uv
 
-uv run main.py --exp-name test --lr 0.01 --epochs 200 --analysis_freq 20 --save t
 
 
-Run with ResNet18 on CIFAR10 for 100 epochs
-    python train.py --exp_name "test" --model ResNet18 --epochs 100
+     uv run main.py --exp-name test --model simple_cnn --lr 0.0075 --epochs 200 --nc_freq 10 --save t
+
