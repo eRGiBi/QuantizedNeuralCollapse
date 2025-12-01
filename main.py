@@ -31,8 +31,9 @@ def main():
         "num_classes": 10,
         "batch_size": 128,
         "epochs": 50,
-        "learning_rate": 0.01,
-        "weight_decay": 0,
+        "lr": 0.001,
+        "scheduler": None,
+        "weight_decay": 5e-4,
         "model": "simple_cnn",
         "pretrained": True, # Only for downloaded models
         "dataset": "CIFAR10",
@@ -66,7 +67,7 @@ def main():
     # optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=0.9, weight_decay=config['weight_decay'])
     optimizer = optim.Adam(
         model.parameters(),
-        lr=config["learning_rate"],
+        lr=config["lr"],
         betas=(0.9, 0.999),
         eps=1e-08,
         amsgrad=False,
@@ -74,22 +75,35 @@ def main():
         decoupled_weight_decay=False,
     )
     config["optimizer"] = str(optimizer)
-    
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config['epochs']
-    )
-    config["scheduling"] = str(scheduler)
 
-    if config["save"]:
-        logger.update_config(config)
-    
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     optimizer, T_max=config['epochs']
+    # )
+    lr_scheduler = optim.lr_scheduler.MultiStepLR(
+        optimizer,
+        [
+            config["epochs"] // 3,
+            config["epochs"] * 2 // 3
+        ],
+        0.1
+    )
+
+    config["scheduler"] = lr_scheduler
+
     # Training
     if config["task"] == "cv":
         trainer = VisionTrainer(model, train_loader, analysis_loader,  config, logger)
     # elif config["task"] == "nlp":
     #     trainer = LanguageTrainer(model, train_loader, analysis_loader, config, logger)
 
-    trained_model = trainer.train(criterion, optimizer, scheduler)
+    trained_model = trainer.train(
+        criterion, optimizer, config["scheduler"]
+    )
+
+    if config["save"]:
+        for key, item in config.items():
+            config[key] = str(item)
+        logger.update_config(config)
 
     # print(trained_model)
     # print(model.modules())

@@ -9,31 +9,44 @@ from data_loading.wikitext import prepare_wikitext_dataset
 
 
 class DatasetLoader:
+    """"""
 
     @staticmethod
     def get_data(config: dict, data_root='./data'):
-        """Load a chosen dataset.
-        
-        Args:
-            dataset_name (str): The name of the dataset ('CIFAR10', etc.).
-            data_root (str): The root directory for the dataset.
+        """Load a chosen dataset."""
+        num_classes = 0
 
-        Returns:
-            tuple: (trainloader, analysis_loader, num_classes)
-        """
         match config["dataset"].upper():
         
             case 'CIFAR10':
-                
+
+                # transform_train = transforms.Compose([
+                #     transforms.RandomCrop(32, padding=4),
+                #     transforms.RandomHorizontalFlip(),
+                #     transforms.ToTensor(),
+                #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                # ])
+                # transform_test = transforms.Compose([
+                #     transforms.ToTensor(),
+                #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                # ])
+
                 transform_train = transforms.Compose([
-                    transforms.RandomCrop(32, padding=4),
-                    transforms.RandomHorizontalFlip(),
+                    transforms.Resize(32),
+                    # transforms.RandomCrop(224, padding=4),
+                    # transforms.RandomHorizontalFlip(),
                     transforms.ToTensor(),
-                    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                    # 2. ImageNet normalization values
+                    transforms.Normalize((0.485, 0.456, 0.406),
+                                         (0.229, 0.224, 0.225)),
                 ])
+
+                # For the test/analysis loader, use:
                 transform_test = transforms.Compose([
+                    transforms.Resize(32),
                     transforms.ToTensor(),
-                    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                    transforms.Normalize((0.485, 0.456, 0.406),
+                                         (0.229, 0.224, 0.225)),
                 ])
                 
                 trainset = torchvision.datasets.CIFAR10(

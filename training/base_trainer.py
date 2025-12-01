@@ -159,7 +159,7 @@ class BaseModelTrainer(ABC):
                 nc_metrics = self.nc_analyzer.analyze(
                     self.model,
                     train_loader,
-                    train_loader, #self.test_loader,
+                    self.analysis_loader, #self.test_loader,
                     self.analysis_loader,
                     self.device
                 )

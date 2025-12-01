@@ -14,11 +14,11 @@ from collapse_analysis.base_neural_collapse_analyzer import BaseNeuralCollapseAn
 # class Features:
 #     pass
 #
-#
 # def hook(self, input, output):
 #     Features.value = input[0].clone()
 
-# Create a dictionary to store the intermediate activation
+
+# dictionary to store the intermediate activation
 activations = {}
 
 def hook(module, input, output):
