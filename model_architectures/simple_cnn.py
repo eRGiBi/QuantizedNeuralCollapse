@@ -35,8 +35,8 @@ class SimpleCNN(nn.Module):
         self.flat = nn.Linear(self.flattened_size, 512)
         # self.dropout1 = nn.Dropout(0.3)
         self.fc5 = nn.Linear(512, 512)
-        self.fc4 = nn.Linear(512, 512)
-        self.fc3 = nn.Linear(512, 512)
+        self.fc4 = nn.Linear(512, 1024)
+        self.fc3 = nn.Linear(1024, 512)
 
         self.fc2 = nn.Linear(512, 512)
 
@@ -61,14 +61,14 @@ class SimpleCNN(nn.Module):
         x = F.relu(self.flat(x))
         # x = self.dropout1(x)
 
-        p_features = F.relu(self.fc5(x))
-        # p_features = F.relu(self.fc4(x))
-        p_features = F.relu(self.fc3(x))
-        p_features = F.relu(self.fc2(x))
+        x = F.relu(self.fc5(x))
+        x = F.relu(self.fc4(x))
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.fc2(x))
 
-        p_features = F.relu(self.fc1(x))
-        # p_features = self.dropout2(p_features)
+        x = F.relu(self.fc1(x))
+        # features = self.dropout2(p_features)
 
-        output = self.classifier(p_features)
+        output = self.classifier(x)
 
         return output
