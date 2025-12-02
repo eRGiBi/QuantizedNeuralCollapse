@@ -13,6 +13,7 @@ dependencies = [
     "transformers>=4.57.1",
     "huggingface-hub>=0.35.3",
     "hf-xet>=1.1.10",
+    "scikit-learn>=1.7.2",
 ]
 
 [[tool.uv.index]]
