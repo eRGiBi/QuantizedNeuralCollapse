@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torchvision.models as torchvision_models
 from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config
 
+from model_architectures.convnext_nano import ConvNeXtNano
 from model_architectures.simple_cnn import SimpleCNN
 
 
@@ -46,8 +47,7 @@ class ModelConstructor:
             match config["model"].lower():
                 
                 case 'simple_cnn':
-                    
-                    print("Using SimpleCNN model.")
+
                     return SimpleCNN(
                         num_classes=config["num_classes"],
                         #  input_channels=input_channels
@@ -76,6 +76,13 @@ class ModelConstructor:
                     model.classifier[-1] = nn.Linear(in_features, config["num_classes"])
 
                     return model
+
+                case 'convnextnano':
+                    return ConvNeXtNano(
+                        num_classes=config["num_classes"],
+                        #  input_channels=input_channels
+                    ).to(config["device"]
+                 )
     
                 case 'resnet18':
                     
