@@ -17,7 +17,8 @@ def get_args():
     parser.add_argument('--task', type=str, default='cv', choices=['nlp', 'cv'], help='')
     parser.add_argument('--dataset', type=str, default='CIFAR10', choices=['CIFAR10', 'MNIST', 'wikitext'], help='Dataset to use.')
     parser.add_argument('--model', type=str, default='simple_cnn', choices=[
-       "convnextt", "simple_cnn", 'mobilenet', 'ResNet18', 'GPT2'], help='Model architecture to use.')
+       "convnextt", "simple_cnn", 'mobilenet', 'ResNet18', 'GPT2', 'convnextnano'],
+                        help='Model architecture to use.')
 
     parser.add_argument('--epochs', type=int, default=50, help='Number of training epochs.')
     parser.add_argument('--lr', type=float, default=0.01, help='Learning rate.')
