@@ -68,7 +68,7 @@ class ModelConstructor:
                 case 'convnextt':
                     model = torchvision_models.convnext_tiny(
                         weights=None if not config["pretrained"] else
-                        torchvision_models.ConvNeXt_Tiny_Weights.IMAGENET1K_V1,
+                            torchvision_models.ConvNeXt_Tiny_Weights.IMAGENET1K_V1,
                         progress=True
                     )
 

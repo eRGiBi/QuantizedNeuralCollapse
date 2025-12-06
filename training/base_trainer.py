@@ -109,7 +109,7 @@ class BaseModelTrainer(ABC):
                 correct += batch_correct
                 total += batch_total
 
-                # Update progress bar with current metrics
+                # Update progress bar
                 if progress_bar.n > 0:
                     current_loss = running_loss / progress_bar.n
                     current_acc = 100.0 * correct / total if total > 0 else 0
@@ -120,8 +120,6 @@ class BaseModelTrainer(ABC):
             # Calculate final epoch metrics
             epoch_loss = running_loss / len(train_loader)
             epoch_acc = 100.0 * correct / total
-
-
 
             epoch_log_data = {
                 "epoch": epoch + 1,

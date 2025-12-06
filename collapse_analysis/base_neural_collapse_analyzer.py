@@ -49,7 +49,7 @@ class BaseNeuralCollapseAnalyzer:
         ):
             return model.fc, model.fc.weight
 
-        elif hasattr(model, 'classifier'):
+        elif hasattr(model, 'classifier') and hasattr(model.classifier, 'weight'):
             return model.classifier, model.classifier.weight
 
         else:

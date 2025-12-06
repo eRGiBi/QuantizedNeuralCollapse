@@ -79,12 +79,7 @@ class ExperimentLogger:
     
 
     def update_config(self, params_dict: Dict[str, Any], save: bool = True):
-        """Update configuration with new parameters.
-
-        Args:
-            params_dict: Dictionary of parameters to add/update
-            save: Whether to save the updated config to disk
-        """
+        """Update configuration with new parameters."""
         self.config.update(params_dict)
         if save and self.config_path:
             self._save_config()
@@ -101,11 +96,7 @@ class ExperimentLogger:
     #         writer.writerow(data)
             
     def log(self, **kwargs):
-        """Log metrics/data as key-value pairs.
-
-        Args:
-            **kwargs: Arbitrary keyword arguments to log
-        """
+        """Log metrics/data as key-value pairs."""
         log_entry = kwargs.copy()
 
         if "timestamp" not in log_entry:
@@ -117,11 +108,7 @@ class ExperimentLogger:
             self._append_to_csv(log_entry)
             
     def log_training_metrics(self, kwargs):
-        """Log metrics/data as key-value pairs.
-
-        Args:
-            **kwargs: Arbitrary keyword arguments to log
-        """
+        """Log metrics/data as key-value pairs."""
         log_entry = kwargs.copy()
 
         if "timestamp" not in log_entry:
@@ -149,10 +136,6 @@ class ExperimentLogger:
             
     def save_results(self, results: Dict[str, Any], file_path: Optional[Union[str, Path]] = None):
         """Save final results to a JSON file.
-
-        Args:
-            results: Dictionary of results to save
-            file_path: Optional custom path (uses default if None)
         """
         save_path = Path(file_path) if file_path else self.results_path
 
@@ -166,12 +149,7 @@ class ExperimentLogger:
        
             
     def save_model(self, model, filename: str = "model.pth"):
-        """
-        Save a PyTorch model to the experiment directory.
-
-        Args:
-            model: PyTorch model to save
-            filename: Name of the model file
+        """Save a PyTorch model to the experiment directory.
         """
         model_path = self.exp_dir / filename
         torch.save(model.state_dict(), model_path)
