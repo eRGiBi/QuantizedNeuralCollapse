@@ -10,9 +10,10 @@ class Block(nn.Module):
         self.norm = nn.LayerNorm(dim, eps=1e-6)
         self.pwconv1 = nn.Linear(dim, 4 * dim)
         self.pwconv2 = nn.Linear(4 * dim, dim)
-        self.drop_path = (
-            DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        )
+        # self.drop_path = (
+        #     DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        # )
+        self.drop_path = nn.Identity()
 
     def forward(self, x):
         input = x
@@ -62,7 +63,7 @@ class ConvNeXtNano(nn.Module):
     def __init__(self, in_chans=3, num_classes=1000, drop_path_rate=0.0):
         super().__init__()
 
-        # Optimized for ~15M params: [64, 128, 256, 512] channels, [2, 2, 6, 2] depths
+        # Opt 15M params: [64, 128, 256, 512] channels, [2, 2, 6, 2] depths
         dims = [64, 128, 256, 512]
         depths = [2, 2, 6, 2]
 
@@ -82,19 +83,23 @@ class ConvNeXtNano(nn.Module):
             self.downsample_layers.append(downsample)
 
         # Stages with stochastic depth
-        self.stages = nn.ModuleList()
-        dp_rates = [
-            x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))
-        ]
-        cur = 0
-        for i in range(4):
-            stage = nn.Sequential(
-                *[Block(dims[i], dp_rates[cur + j]) for j in range(depths[i])]
-            )
-            self.stages.append(stage)
-            cur += depths[i]
+        # self.stages = nn.ModuleList()
+        # dp_rates = [
+        #     x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))
+        # ]
+        # cur = 0
+        # for i in range(4):
+        #     stage = nn.Sequential(
+        #         *[Block(dims[i], dp_rates[cur + j]) for j in range(depths[i])]
+        #     )
+        #     self.stages.append(stage)
+        #     cur += depths[i]
 
-        # Head
+        self.stages = nn.ModuleList()
+        for i in range(4):
+            stage = nn.Sequential(*[Block(dims[i], drop_path=0.0) for j in range(depths[i])])
+            self.stages.append(stage)
+
         self.norm = nn.LayerNorm(dims[-1], eps=1e-6)
         self.head = nn.Linear(dims[-1], num_classes)
 

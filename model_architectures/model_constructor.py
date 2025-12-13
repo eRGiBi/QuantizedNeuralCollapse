@@ -58,14 +58,32 @@ class ModelConstructor:
                     model = torchvision_models.mobilenet_v3_large(
                         weights=None if not config["pretrained"] else
                             torchvision_models.MobileNet_V3_Large_Weights.IMAGENET1K_V2,
-                        progress=True
+                        progress=True,
+                        kwargs = {
+                            "stochastic_depth_prob": 0.0
+                        }
                     )
                     in_features = model.classifier[-1].in_features
                     model.classifier[-1] = nn.Linear(in_features, config["num_classes"])
 
                     return model
 
-                case 'convnextt':
+                case 'convnextsmall':
+                    model = torchvision_models.convnext_small(
+                        weights=None if not config["pretrained"] else
+                        torchvision_models.ConvNeXt_Small_Weights.IMAGENET1K_V1,
+                        progress=True,
+                        kwargs = {
+                            "stochastic_depth_prob": 0.0
+                        }
+                    )
+
+                    in_features = model.classifier[-1].in_features
+                    model.classifier[-1] = nn.Linear(in_features, config["num_classes"])
+
+                    return model
+
+                case 'convnexttiny':
                     model = torchvision_models.convnext_tiny(
                         weights=None if not config["pretrained"] else
                             torchvision_models.ConvNeXt_Tiny_Weights.IMAGENET1K_V1,
