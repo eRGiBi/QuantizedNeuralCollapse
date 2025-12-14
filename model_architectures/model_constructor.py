@@ -5,6 +5,7 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config
 
 from model_architectures.convnext_nano import ConvNeXtNano
 from model_architectures.simple_cnn import SimpleCNN
+from model_architectures.simplegpt import SimpleGPT
 
 
 class ModelWrapper(nn.Module):
@@ -41,14 +42,15 @@ class ModelConstructor:
         Returns:
             torch.nn.Module: The constructed model.
         """
+        model = None
+
         if config["task"] == "cv":
             input_channels = 1 if config["dataset"].upper() == 'MNIST' else 3
 
             match config["model"].lower():
                 
                 case 'simple_cnn':
-
-                    return SimpleCNN(
+                    model = SimpleCNN(
                         num_classes=config["num_classes"],
                         #  input_channels=input_channels
                         ).to(config["device"]
@@ -66,7 +68,19 @@ class ModelConstructor:
                     in_features = model.classifier[-1].in_features
                     model.classifier[-1] = nn.Linear(in_features, config["num_classes"])
 
-                    return model
+
+                case 'convnextbase':
+                    model = torchvision_models.convnext_base(
+                        weights=None if not config["pretrained"] else
+                        torchvision_models.ConvNeXt_Base_Weights.IMAGENET1K_V1,
+                        progress=True,
+                        kwargs={
+                            "stochastic_depth_prob": 0.0
+                        }
+                    )
+
+                    in_features = model.classifier[-1].in_features
+                    model.classifier[-1] = nn.Linear(in_features, config["num_classes"])
 
                 case 'convnextsmall':
                     model = torchvision_models.convnext_small(
@@ -81,8 +95,6 @@ class ModelConstructor:
                     in_features = model.classifier[-1].in_features
                     model.classifier[-1] = nn.Linear(in_features, config["num_classes"])
 
-                    return model
-
                 case 'convnexttiny':
                     model = torchvision_models.convnext_tiny(
                         weights=None if not config["pretrained"] else
@@ -93,41 +105,55 @@ class ModelConstructor:
                     in_features = model.classifier[-1].in_features
                     model.classifier[-1] = nn.Linear(in_features, config["num_classes"])
 
-                    return model
-
                 case 'convnextnano':
-                    return ConvNeXtNano(
+                    model = ConvNeXtNano(
                         num_classes=config["num_classes"],
                         #  input_channels=input_channels
                     ).to(config["device"]
                  )
     
                 case 'resnet18':
-                    
-                    print("Using torchvision ResNet-18 model.")
-                    base_model = torchvision_models.resnet18(weights=None) # weights=None for training from scratch
 
-                    # Adaption if necessary
+                    base_model = torchvision_models.resnet18(weights=None)
+
                     if input_channels == 1:
                         base_model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
                         
                     return ModelWrapper(base_model, num_classes=config["num_classes"])
+
+                case _:
+                    print("Wrong model class.")
+
+            return model,
             
         elif config["task"] == "nlp":
+
+            model, tokenizer = None, None
             
             match config["model"].lower():
                 
                 case "gpt2":
-                
-                    # Load model and tokenizer
+        
                     print("Loading GPT2 model...")
                     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
                     tokenizer.pad_token = tokenizer.eos_token
 
                     model = GPT2LMHeadModel.from_pretrained("gpt2")
                     model.to(config["device"])
-                    
-                    return model, tokenizer
+
+                case "shakespeare_char":
+                    pass
+
+                case "simplegpt":
+                    model = SimpleGPT(
+                        vocab_size=config["vocab_size"],
+                        n_embd=config["n_embd"],
+                        n_layer=config["n_layer"],
+                        n_head=config["n_head"],
+                    ).to(config["device"])
+
+
+            return model, tokenizer
 
         else:
             raise ValueError(f"Model '{config['model']}' not supported.")
