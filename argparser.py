@@ -9,15 +9,17 @@ def get_args():
     
     parser.add_argument("--exp-name", type=str, default="NC_Experiment", help="the name of this experiment")
     # parser.add_argument('--run_type', type=str, default='full', choices=["full", "cont", "test", "saved", "learning"]
-
     parser.add_argument('--seed', '-s', type=int, default=476, help="Seed of the experiment.")
-
     parser.add_argument('--device', type=str, default="cuda", choices=["cuda", "cpu"])
 
-    parser.add_argument('--task', type=str, default='cv', choices=['nlp', 'cv'], help='')
-    parser.add_argument('--dataset', type=str, default='CIFAR10', choices=['CIFAR10', 'MNIST', 'wikitext'], help='Dataset to use.')
+    parser.add_argument('--task', type=str, default='cv', choices=['nlp', 'cv'])
+    parser.add_argument('--dataset', type=str, default='CIFAR10',
+                        choices=['CIFAR10', 'CIFAR100', 'MNIST', 'wikitext', 'shakespeare_char'],
+                        help='Dataset to use.')
     parser.add_argument('--model', type=str, default='simple_cnn', choices=[
-       "convnextt", "simple_cnn", 'mobilenet', 'ResNet18', 'GPT2', 'convnextnano'],
+       "convnexttiny", 'convnextnano', "convnextsmall", "convnextbase", "simple_cnn", 'mobilenet', 'ResNet18',
+        'GPT2', 'simplegpt'
+    ],
                         help='Model architecture to use.')
     parser.add_argument('--pretrained', default=True, type=lambda x: bool(strtobool(x)))
 
