@@ -30,7 +30,6 @@ Install dependencies specified in the included uv lockfile to in virtual env, fo
 
 ### uv
 
-
-
      uv run main.py --exp-name test --model simple_cnn --lr 0.0075 --epochs 200 --nc_freq 10 --save t
 
+    uv run main.py --exp-name cnext_tiny --model convnexttiny --pretrained t --dataset CIFAR10  --lr 0.0075 --epochs 100 --nc_freq 5 --save t --seed 325
