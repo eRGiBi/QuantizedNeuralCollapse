@@ -17,11 +17,12 @@ def get_args():
                         choices=['CIFAR10', 'CIFAR100', 'MNIST', 'wikitext', 'shakespeare_char'],
                         help='Dataset to use.')
     parser.add_argument('--model', type=str, default='simple_cnn', choices=[
-       "convnexttiny", 'convnextnano', "convnextsmall", "convnextbase", "simple_cnn", 'mobilenet', 'ResNet18',
+       "convnexttiny", 'convnextnano', "convnextsmall", "convnextbase", "simple_cnn", 'mobilenet', 'resnet18',
         'GPT2', 'simplegpt'
     ],
                         help='Model architecture to use.')
     parser.add_argument('--pretrained', default=True, type=lambda x: bool(strtobool(x)))
+    parser.add_argument('--precision', type=str, default='float32', choices=['float32', 'float16', 'bfloat16'])
 
     parser.add_argument('--epochs', type=int, default=50, help='Number of training epochs.')
     parser.add_argument('--lr', type=float, default=0.01, help='Learning rate.')
