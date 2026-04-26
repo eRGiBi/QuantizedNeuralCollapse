@@ -3,7 +3,15 @@ import torch.nn as nn
 
 
 class SimpleGPT(nn.Module):
-    def __init__(self, vocab_size=65, n_embd=128, n_layer=4, n_head=4, block_size=256):
+
+    def __init__(
+            self,
+            vocab_size=65,
+            n_embd=128,
+            n_layer=4,
+            n_head=4,
+            block_size=256
+    ):
         super().__init__()
         self.block_size = block_size
 
@@ -25,13 +33,19 @@ class SimpleGPT(nn.Module):
         ])
 
         self.ln_f = nn.LayerNorm(n_embd)
-        # NC Analysis happens here:
+
         self.lm_head = nn.Linear(n_embd, vocab_size, bias=False)
+        # Tie weights — wte and lm_head share the same tensor
+        self.lm_head.weight = self.wte.weight
 
         self.apply(self._init_weights)
 
     def _init_weights(self, module):
-        if isinstance(module, (nn.Linear, nn.Embedding)):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, idx):
@@ -41,10 +55,13 @@ class SimpleGPT(nn.Module):
         pos = torch.arange(0, t, device=device).unsqueeze(0)
         x = self.wte(idx) + self.wpe(pos)
 
-        # In modern PyTorch, 'is_causal=True' handles the mask automatically.
-        # We pass None for the mask and let the optimized kernel handle it.
+        seq_len = x.size(1)
+        causal_mask = nn.Transformer.generate_square_subsequent_mask(
+            seq_len, device=x.device
+        )
+
         for block in self.h:
-            x = block(x, src_mask=None, is_causal=True)
+            x = block(x, src_mask=causal_mask, is_causal=True)
 
         x = self.ln_f(x)
         logits = self.lm_head(x)

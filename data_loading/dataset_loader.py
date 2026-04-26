@@ -15,7 +15,7 @@ from data_loading.wikitext import prepare_wikitext_dataset
 
 
 class DatasetLoader:
-    """"""
+    """Helper class to load datasets based on specified names and configurations."""
 
     @staticmethod
     def get_data(config: dict, data_root='./data'):
@@ -76,7 +76,6 @@ class DatasetLoader:
                 num_classes = 10
 
             case "CIFAR100":
-
                 transform = transforms.Compose([
                     transforms.Resize(32),
                     transforms.ToTensor(),
@@ -116,8 +115,6 @@ class DatasetLoader:
                     batch_size=config["batch_size"]
                 )
 
-
-
             case _:
                 raise ValueError(f"Dataset is not supported.")
 
@@ -147,6 +144,5 @@ class DatasetLoader:
             num_workers=2,
             pin_memory=True
         )
-
 
         return train_loader, val_loader, ood_loader, num_classes
