@@ -10,12 +10,14 @@ class BaseNeuralCollapseAnalyzer:
 
     def __init__(
             self,
+            config,
             # model,
             data_loader,
             num_classes,
             # logger: ExperimentLogger,
             device='cuda'
     ):
+        self.config = config
         # self.model = model
         self.data_loader = data_loader
         self.num_classes = num_classes

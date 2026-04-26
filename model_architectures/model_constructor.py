@@ -43,6 +43,7 @@ class ModelConstructor:
             torch.nn.Module: The constructed model.
         """
         model = None
+        tokenizer = None
 
         if config["task"] == "cv":
             input_channels = 1 if config["dataset"].upper() == 'MNIST' else 3
@@ -114,27 +115,27 @@ class ModelConstructor:
     
                 case 'resnet18':
 
-                    base_model = torchvision_models.resnet18(weights=None)
+                    model = torchvision_models.resnet18(weights=None, num_classes=config["num_classes"])
 
-                    if input_channels == 1:
-                        base_model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+                    # if input_channels == 1:
+                    #     model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+
+                    model.conv1 = nn.Conv2d(1, model.conv1.weight.shape[0], 3, 1, 1, bias=False)
+                    model.maxpool = nn.MaxPool2d(kernel_size=1, stride=1, padding=0)
                         
-                    return ModelWrapper(base_model, num_classes=config["num_classes"])
+                    model = ModelWrapper(model, num_classes=config["num_classes"])
 
                 case _:
                     print("Wrong model class.")
 
-            return model,
+            return model, None
             
         elif config["task"] == "nlp":
-
-            model, tokenizer = None, None
             
             match config["model"].lower():
                 
                 case "gpt2":
-        
-                    print("Loading GPT2 model...")
+
                     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
                     tokenizer.pad_token = tokenizer.eos_token
 

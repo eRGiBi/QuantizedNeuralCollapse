@@ -1,3 +1,4 @@
+from collapse_analysis.vision_collapse_analyzer import VisionNeuralCollapseAnalyzer
 from training.base_trainer import BaseModelTrainer
 
 
@@ -8,10 +9,26 @@ class VisionTrainer(BaseModelTrainer):
     #     outputs = self.model(inputs)
     #     return outputs, labels
 
+    def __init__(self, model, train_loader, validation_loader, ood_loader, config, logger):
+
+        self.nc_analyzer = VisionNeuralCollapseAnalyzer(
+            ood_loader, config
+        )
+
+
+        super().__init__(model, train_loader, validation_loader, ood_loader, config, logger)
+
     def _process_batch(self, batch_data):
         """Process a batch for computer vision models."""
         inputs, labels = batch_data
-        inputs, labels = inputs.to(self.device), labels.to(self.device)
+        inputs = inputs.to(
+            self.device,
+            dtype=self.global_target_dtype
+        )
+        labels = labels.to(
+            self.device,
+            # dtype=self.global_target_dtype
+        )
 
         outputs = self.model(inputs)
         return outputs, labels
@@ -19,8 +36,10 @@ class VisionTrainer(BaseModelTrainer):
 
     def _compute_loss_and_accuracy(self, outputs, labels, criterion):
         """Compute loss and accuracy for CV models."""
-        loss = criterion(outputs, labels)
+        loss = criterion(outputs.float(), labels.long())
+
         _, predicted = outputs.max(1)
+
         correct = predicted.eq(labels).sum().item()
         total = labels.size(0)
 
