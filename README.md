@@ -29,7 +29,14 @@ Install dependencies specified in the included uv lockfile to in virtual env, fo
 ## Usage
 
 ### With uv:
-
+```bash
     uv run main.py --exp-name test --model simple_cnn --lr 0.0075 --epochs 200 --nc_freq 10 --save t
 
     uv run main.py --exp-name cnext_tiny --model convnexttiny --pretrained t --dataset CIFAR10  --lr 0.0075 --epochs 100 --nc_freq 5 --save t --seed 325
+    
+```
+
+NLP:
+```bash
+    uv run main.py --exp-name sgptshak_test --task nlp --model simplegpt  --pretrained f --dataset shakespeare_char  --lr 0.0075 --epochs 3 --nc_freq 1 --save f --seed 32551
+```

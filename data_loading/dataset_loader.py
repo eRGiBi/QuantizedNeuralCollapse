@@ -9,7 +9,7 @@ from torchvision.transforms import Normalize, ToTensor, Compose
 from transformers import GPT2Tokenizer
 from torch.utils.data import random_split
 
-from data_loading.shake_slop import prepare_sshak_char_dataset
+from data_loading.shake_txt_loader import prepare_text_char_dataset
 from data_loading.shakespeare_char_prepare import prepare_shakespeare_char_dataset
 from data_loading.wikitext import prepare_wikitext_dataset
 
@@ -110,9 +110,11 @@ class DatasetLoader:
                 )
 
             case "SHAKESPEARE_CHAR":
-                train_set, val_set, ood_set, num_classes = prepare_sshak_char_dataset(
+                # train_set, val_set, ood_set, num_classes = prepare_shakespeare_char_dataset(
+                train_set, val_set, ood_set, num_classes = prepare_text_char_dataset(
                     block_size=config.get("block_size", 1024),
-                    batch_size=config["batch_size"]
+                    batch_size=config["batch_size"],
+                    reduced=True
                 )
 
             case _:

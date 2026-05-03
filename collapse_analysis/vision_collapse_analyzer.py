@@ -27,15 +27,21 @@ def hook(module, input, output):
 class VisionNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
     """"""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, analysis_loader, config):
         """"""
-        super().__init__(args, kwargs)
+        super().__init__(
+            config,
+            analysis_loader,
+            config["num_classes"],
+            # logger: ExperimentLogger,
+            config["device"]
+        )
 
     def analyze(
             self,
             model,
             train_loader,
-            test_loader,
+            validation_loader,
             ood_loader,
             device
     ):
@@ -107,9 +113,9 @@ class VisionNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
 
         metrics = {
             "nc1_pinv": covariance_ratio(covar_within, means, mG),
-            "nc1_svd": covariance_ratio(covar_within, means, mG, "svd"),
-            "nc1_quot": covariance_ratio(covar_within, means, mG, "quotient"),
-            "nc1_cdnv": variability_cdnv(var_norms, means, tile_size=64),
+            # "nc1_svd": covariance_ratio(covar_within, means, mG, "svd"),
+            # "nc1_quot": covariance_ratio(covar_within, means, mG, "quotient"),
+            # "nc1_cdnv": variability_cdnv(var_norms, means, tile_size=64),
             "nc2_etf_err": simplex_etf_error(means, mG),
             "nc2g_dist": kernel_stats(means, mG, tile_size=64)[1],
             "nc2g_log": kernel_stats(means, mG, kernel=log_kernel, tile_size=64)[1],

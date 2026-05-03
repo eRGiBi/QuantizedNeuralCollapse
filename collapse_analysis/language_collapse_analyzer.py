@@ -22,14 +22,14 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
     Analyzes neural collapse metrics for language models.
     Compatible with nanoGPT and similar decoder-only transformers.
     """
-    def __init__(self, analysis_loader, config):
+    def __init__(self, ood_loader, config):
 
         self.max_samples = config["max_samples_for_nc"]
         self.min_samples_per_class = config["min_samples_per_class"]
 
         super().__init__(
             config,
-            analysis_loader,
+            ood_loader,
             config["num_classes"],
             # logger: ExperimentLogger,
             config["device"]
@@ -39,7 +39,7 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             self,
             model,
             train_loader,
-            test_loader,
+            validation_loader,
             ood_loader,
             device,
     ):
@@ -153,10 +153,6 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             self, model: nn.Module, dataloader, max_samples: int
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Extract last-layer embeddings, labels, and logits from the model.
-
-        For nanoGPT-style models:
-        - Hook into the last transformer block output (before final layer norm)
-        - OR use the embeddings just before the language modeling head
 
         Returns:
             embeddings: (N, D) last-layer features
@@ -332,8 +328,7 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
     def _filter_rare_classes(
             self, embeddings: torch.Tensor, labels: torch.Tensor, logits: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Filter out classes with too few samples.
+        """Filter out classes with too few samples.
 
         Returns:
             filtered_embeddings, filtered_labels, filtered_logits, valid_class_indices
@@ -345,7 +340,7 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
 
         if len(valid_classes) == 0:
             raise ValueError(
-                f"No classes have >= {self.min_samples_per_class} samples! "
+                f"No classes have >= {self.min_samples_per_class} samples!"
                 f"Try reducing min_samples_per_class or collecting more data."
             )
 
@@ -433,10 +428,11 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
         }
 
     def nc2_hyperspherical_uniformity(
-            self, M: torch.Tensor, mG: torch.Tensor
+            self,
+            M: torch.Tensor,
+            mG: torch.Tensor
     ) -> Dict[str, float]:
-        """
-        NC2: Measure how uniformly class means are distributed on hypersphere.
+        """NC2: Measure how uniformly class means are distributed on hypersphere.
 
         Returns:
         - etf_error: Deviation from Simplex ETF
@@ -457,7 +453,7 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
         triu_idx = torch.triu_indices(C, C, offset=1)
         pairwise_similarities = similarities[triu_idx[0], triu_idx[1]]
 
-        # Ideal: all pairs should have cosine similarity = -1/(C-1)
+        # Ideal: all pairs should have cosine similarity
         ideal_similarity = -1.0 / (C - 1)
         etf_error = (pairwise_similarities - ideal_similarity).pow(2).mean().sqrt()
 
@@ -529,23 +525,18 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             self,
             model: nn.Module,
             train_loader,
-            test_loader,
-            analysis_loader,
+            validation_loader,
+            ood_loader,
             device: str,
-    ) -> Dict[str, float]:
-        """
-        Main analysis function called by your training pipeline.
-
-        Returns dict with all NC metrics.
-        """
+    ):
+        """Return dict with all NC metrics."""
         model.eval()
 
         try:
             # Extract embeddings, labels, and logits
             embeddings, labels, logits = self._extract_embeddings_and_logits(
-                model, analysis_loader, self.max_samples
+                model, ood_loader, self.max_samples
             )
-
             # Filter rare classes
             embeddings, labels, logits, valid_classes = self._filter_rare_classes(
                 embeddings, labels, logits

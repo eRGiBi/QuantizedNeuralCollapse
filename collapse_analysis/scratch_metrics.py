@@ -33,7 +33,7 @@ class BaseNeuralCollapseAnalyzer:
             self,
             model,
             train_loader,
-            test_loader,
+            validation_loader,
             ood_loader,
             device
     ):

@@ -14,6 +14,8 @@ import torch.optim as optim
 
 from argparser import get_args
 from experiment_logger import ExperimentLogger
+from general_analysis import ModelAnalyzer
+from quantization.q_controller import apply_quantization_config
 from data_loading.dataset_loader import DatasetLoader
 from model_architectures.model_constructor import ModelConstructor
 from training.language_trainer import LanguageTrainer
@@ -45,6 +47,12 @@ def main():
     # ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
     # ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
+    PRECISION_MAP = {
+        "float32": torch.float32,
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16
+    }
+
     # Default values
     config = {
         "exp_name": "NC_Experiment",
@@ -64,27 +72,31 @@ def main():
         "now": datetime.now().strftime("%m.%d.%Y_%H.%M.%S"),
         "save": False
     }
+
     if vars(args)["task"] == "nlp":
         config.update(
             {
-                "vocab_size": 65,  # Smaller for testing
+                "vocab_size": 65,
                 "num_classes": 65,
-                "n_embd": 1024,
+                "n_embd": 64,
                 "n_layer": 4,
-                "n_head": 4,
-                "batch_size": 24,
-                "seq_length": 64,
-                "block_size": 256,
+                "n_head": 2,
+                "batch_size": 128,
+                "seq_length": 32,
+                "block_size": 32,
                 "epochs": 5,
                 "nc_freq": 1,
-                "max_samples_for_nc": 1000,  # Limit samples for NC analysis
-                "min_samples_per_class": 50,  # Minimum samples per token
+                "max_samples_for_nc": 200,  # Limit samples for NC analysis
+                "min_samples_per_class": 3,  # Minimum samples per token
                 "grad_accumulation_steps": 1,
-                "clip_grad": False,
+                "clip_grad": True,
                 "max_grad_norm": 1.0,
             }
         )
+
     config.update(vars(args))
+
+    # config["dtype"] = PRECISION_MAP.get(config["precision"], torch.float32)
 
     print('\nUpdated configuration:')
     print(config)
@@ -101,18 +113,20 @@ def main():
     def count_parameters(model):
         return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    print("Model parameters:",  count_parameters(model))
+    print("Model parameters:", count_parameters(model))
+
+    # model = apply_quantization_config(model, config)
 
     if isinstance(model, tuple):
         model, tokenizer = model
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(
-        model.parameters(),
-        lr=config['lr'],
-        momentum=0.9,
-        weight_decay=config['weight_decay']
-    )
+    # optimizer = optim.SGD(
+    #     model.parameters(),
+    #     lr=config['lr'],
+    #     momentum=0.9,
+    #     weight_decay=5e-4#config['weight_decay']
+    # )
     # optimizer = optim.Adam(
     #     model.parameters(),
     #     lr=config["lr"],
@@ -122,21 +136,41 @@ def main():
     #     weight_decay=config["weight_decay"],
     #     decoupled_weight_decay=True,
     # )
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=config["lr"],
+        weight_decay=0.1,
+        betas=(0.9, 0.95)
+    )
+
     config["optimizer"] = str(optimizer)
 
-    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-    #     optimizer, eta_min=config["lr"] / 100, T_max=config['epochs']
-    # )
-    scheduler = optim.lr_scheduler.MultiStepLR(
-        optimizer,
-        [
-            30, #config["epochs"] // 3,
-            45, #config["epochs"] * 2 // 3
-            # 75,
-            # 115,
-        ],
-        0.1
+    # def _init_weights(module):
+    #     if isinstance(module, nn.Linear):
+    #         torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+    #         if module.bias is not None:
+    #             torch.nn.init.zeros_(module.bias)
+    #     elif isinstance(module, nn.Embedding):
+    #         torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+    #
+    # model.apply(_init_weights)
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, eta_min=config["lr"] / 1000, T_max=config['epochs']
     )
+
+    # scheduler = optim.lr_scheduler.MultiStepLR(
+    #     optimizer,
+    #     [
+    #         config["epochs"] // 5,
+    #         # config["epochs"] * 2 // 3
+    #         # 75,
+    #         # 115,
+    #         400,
+    #         450
+    #     ],
+    #     0.1
+    # )
     config["scheduler"] = scheduler
 
     # Training
@@ -157,6 +191,9 @@ def main():
         logger.update_config(config)
 
     # logger.save_training_image()
+
+    # analyzer = ModelAnalyzer(trained_model, config, logger, output_dir=logger.exp_dir)
+    # results = analyzer.run_all(train_loader, validation_loader, ood_loader, criterion)
 
     # print(trained_model)
     # print(model.modules())
