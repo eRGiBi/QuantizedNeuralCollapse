@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import plotter
 from argparser import get_args
 from experiment_logger import ExperimentLogger
 from general_analysis import ModelAnalyzer
@@ -76,18 +77,18 @@ def main():
     if vars(args)["task"] == "nlp":
         config.update(
             {
-                "vocab_size": 65,
-                "num_classes": 65,
-                "n_embd": 64,
-                "n_layer": 4,
-                "n_head": 2,
-                "batch_size": 128,
-                "seq_length": 32,
-                "block_size": 32,
+                "vocab_size": 64,
+                "num_classes": 64,
+                "n_embd": 128,
+                "n_layer": 8,
+                "n_head": 4,
+                "batch_size": 16,
+                "seq_length": 64,
+                "block_size": 128,
                 "epochs": 5,
                 "nc_freq": 1,
                 "max_samples_for_nc": 200,  # Limit samples for NC analysis
-                "min_samples_per_class": 3,  # Minimum samples per token
+                "min_samples_per_class": 5,  # Minimum samples per token
                 "grad_accumulation_steps": 1,
                 "clip_grad": True,
                 "max_grad_norm": 1.0,
@@ -139,7 +140,7 @@ def main():
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=config["lr"],
-        weight_decay=0.1,
+        weight_decay=0.0,
         betas=(0.9, 0.95)
     )
 
@@ -155,22 +156,25 @@ def main():
     #
     # model.apply(_init_weights)
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, eta_min=config["lr"] / 1000, T_max=config['epochs']
-    )
-
-    # scheduler = optim.lr_scheduler.MultiStepLR(
-    #     optimizer,
-    #     [
-    #         config["epochs"] // 5,
-    #         # config["epochs"] * 2 // 3
-    #         # 75,
-    #         # 115,
-    #         400,
-    #         450
-    #     ],
-    #     0.1
+    # scheduler = None
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     optimizer, eta_min=config["lr"] / 1000, T_max=config['epochs']
     # )
+    scheduler = optim.lr_scheduler.MultiStepLR(
+        optimizer,
+        [
+            # config["epochs"] // 5,
+            # config["epochs"] * 2 // 3
+            # 75,
+            # 115,
+            # 400,
+            # 450
+            500,
+            600,
+            750
+        ],
+        0.1
+    )
     config["scheduler"] = scheduler
 
     # Training
@@ -190,10 +194,11 @@ def main():
             config[key] = str(item)
         logger.update_config(config)
 
-    # logger.save_training_image()
-
-    # analyzer = ModelAnalyzer(trained_model, config, logger, output_dir=logger.exp_dir)
-    # results = analyzer.run_all(train_loader, validation_loader, ood_loader, criterion)
+    analyzer = ModelAnalyzer(trained_model, config, logger)
+    results = analyzer.run_all(train_loader, validation_loader, ood_loader, criterion)
+    print("\nFinal Analysis Results:")
+    for metric, value in results.items():
+        print(f"{metric}: {value:.4f}")
 
     # print(trained_model)
     # print(model.modules())

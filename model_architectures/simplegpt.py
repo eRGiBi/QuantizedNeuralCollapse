@@ -15,28 +15,34 @@ class SimpleGPT(nn.Module):
         super().__init__()
         self.block_size = block_size
 
-        # 1. Direct attributes (Fixes the AttributeError)
         self.wte = nn.Embedding(vocab_size, n_embd)
         self.wpe = nn.Embedding(block_size, n_embd)
 
-        # 2. Use a list of blocks for transparency
-        self.h = nn.ModuleList([
-            nn.TransformerEncoderLayer(
-                d_model=n_embd,
-                nhead=n_head,
-                dim_feedforward=4 * n_embd,
-                dropout=0.0,
-                activation='gelu',
-                batch_first=True,
-                norm_first=True
-            ) for _ in range(n_layer)
-        ])
+        self.h = nn.ModuleList(
+            [
+                nn.TransformerEncoderLayer(
+                    d_model=n_embd,
+                    nhead=n_head,
+                    dim_feedforward=4 * n_embd,
+                    dropout=0.0,
+                    activation='gelu',
+                    batch_first=True,
+                    norm_first=True
+                ) for _ in range(n_layer)
+            ]
+        )
 
         self.ln_f = nn.LayerNorm(n_embd)
 
         self.lm_head = nn.Linear(n_embd, vocab_size, bias=False)
-        # Tie weights — wte and lm_head share the same tensor
-        self.lm_head.weight = self.wte.weight
+        # Tie weights - wte and lm_head share the same tensor
+        # self.lm_head.weight = self.wte.weight
+        #  tie the input token embeddings directly to the output classifier layer weights to save memory and parameter count
+        #  For Neural Collapse, this acts as a severe structural constraint.
+        #  If the input geometry and output geometry are forced to be identical,
+        #  the terminal classifier layer cannot freely collapse into an Equiangular Tight Frame (ETF)
+        #  and align properly without also forcing the input embeddings to satisfy identical rigid conditions immediately,
+        #  which usually halts training before hitting 100% accuracy.
 
         self.apply(self._init_weights)
 
