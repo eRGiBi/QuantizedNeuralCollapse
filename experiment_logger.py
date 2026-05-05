@@ -28,6 +28,7 @@ class ExperimentLogger:
         self.config = config or {}
         self.log_data = []
         self.save_to_disk = save_to_disk
+        self.metrics = {}
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.run_name = f"{timestamp}_{experiment_name}"
@@ -57,6 +58,7 @@ class ExperimentLogger:
             step: Optional epoch or iteration number.
         """
         log_entry = metrics.copy()
+        self.metrics.update(metrics)
         log_entry["timestamp"] = datetime.now().isoformat()
 
         self.log_data.append(log_entry)

@@ -83,30 +83,38 @@ class DatasetLoader:
                                          (0.229, 0.224, 0.225)),
                 ])
 
-                trainset = torchvision.datasets.CIFAR100(
+                train_set = torchvision.datasets.CIFAR100(
                     root=data_root,
                     train=True,
                     download=True,
                     transform=transform
                 )
-                analysis_set = torchvision.datasets.CIFAR100(
+                val_set = torchvision.datasets.CIFAR100(
                     root=data_root,
                     train=False,
                     download=True,
                     transform=transform
                 )
+                # use a split for an OOD-like holdout; caller can override as needed
+                ood_set, val_set = random_split(val_set, [5000, 5000])
                 num_classes = 100
 
             case "WIKITEXT":
-                train_set, analysis_set, num_classes = prepare_wikitext_dataset(
+                train_loader, analysis_loader, num_classes = prepare_wikitext_dataset(
                     tokenizer=GPT2Tokenizer.from_pretrained("gpt2"),
                     batch_size=config["batch_size"]
                 )
 
-            case "kar_SHAKESPEARE_CHAR":
+                # `prepare_wikitext_dataset` already returns ready-to-use DataLoaders.
+                # Return them directly to avoid wrapping a DataLoader inside another DataLoader.
+                return train_loader, analysis_loader, analysis_loader, num_classes
+
+            case "KAR_SHAKESPEARE_CHAR":
                 train_set, val_set, ood_set, num_classes = prepare_shakespeare_char_dataset(
                     block_size=config.get("block_size", 1024),
-                    batch_size=config["batch_size"]
+                    batch_size=config["batch_size"],
+                    train_split_size=int(config.get("train_split_size", 10000)),
+                    deterministic_train=bool(config.get("deterministic_train", False)),
                 )
 
             case "SHAKESPEARE_CHAR":

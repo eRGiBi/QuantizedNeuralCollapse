@@ -18,9 +18,9 @@ from collapse_analysis.base_neural_collapse_analyzer import BaseNeuralCollapseAn
 
 
 class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
-    """
-    Analyzes neural collapse metrics for language models.
-    Compatible with nanoGPT and similar decoder-only transformers.
+    """Produce neural collapse metrics for language models.
+
+    Compatible with Pytorch transformers.
     """
     def __init__(self, ood_loader, config):
 
