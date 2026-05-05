@@ -5,7 +5,7 @@ from distutils.util import strtobool
 
 def get_args():
     """Parse arguments from the command line."""
-    parser = argparse.ArgumentParser(description="Run Neural Collapse experiments.")
+    parser = argparse.ArgumentParser(description="Run Neural Collapse experiment.")
     
     parser.add_argument("--exp-name", type=str, default="NC_Experiment", help="the name of this experiment")
     # parser.add_argument('--run_type', type=str, default='full', choices=["full", "cont", "test", "saved", "learning"]
@@ -14,7 +14,7 @@ def get_args():
 
     parser.add_argument('--task', type=str, default='cv', choices=['nlp', 'cv'])
     parser.add_argument('--dataset', type=str, default='CIFAR10',
-                        choices=['CIFAR10', 'CIFAR100', 'MNIST', 'wikitext', 'shakespeare_char'],
+                        choices=['CIFAR10', 'CIFAR100', 'MNIST', 'wikitext', 'shakespeare_char', 'kar_shakespeare_char'],
                         help='Dataset to use.')
     parser.add_argument('--model', type=str, default='simple_cnn', choices=[
        "convnexttiny", 'convnextnano', "convnextsmall", "convnextbase", "simple_cnn", 'mobilenet', 'resnet18',
@@ -29,6 +29,19 @@ def get_args():
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size for training.')
     parser.add_argument('--weight_decay', type=float, default=0, help='Weight decay for the optimizer.')
     parser.add_argument('--nc_freq', type=int, default=5, help='Frequency (in epochs) to run NC analysis.')
+
+    # NLP-specific knobs (only used when --task nlp)
+    parser.add_argument('--block_size', type=int, default=None, help='Sequence length / context size for char-LMs.')
+    parser.add_argument('--vocab_size', type=int, default=None, help='Override vocabulary size (normally inferred).')
+    parser.add_argument('--n_embd', type=int, default=None, help='Transformer embedding width.')
+    parser.add_argument('--n_layer', type=int, default=None, help='Number of Transformer layers.')
+    parser.add_argument('--n_head', type=int, default=None, help='Number of attention heads.')
+
+    # Overfitting/terminal-phase NC helpers
+    parser.add_argument('--deterministic_train', default=True, type=lambda x: bool(strtobool(x)),
+                        help='Use indexed (deterministic) char training set).')
+    parser.add_argument('--train_split_size', type=int, default=10000,
+                        help='Number of training sequences to draw/use for.')
     
     # Saving
     parser.add_argument('--save', default=False, type=lambda x: bool(strtobool(x)))
