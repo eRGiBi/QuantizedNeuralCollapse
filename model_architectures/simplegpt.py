@@ -13,6 +13,7 @@ class SimpleGPT(nn.Module):
             block_size=256
     ):
         super().__init__()
+        # self._causal_mask = None
         self.block_size = block_size
 
         self.wte = nn.Embedding(vocab_size, n_embd)
@@ -48,7 +49,10 @@ class SimpleGPT(nn.Module):
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            torch.nn.init.kaiming_normal_(
+                module.weight, nonlinearity='linear', mode='fan_in'
+            )
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
@@ -62,12 +66,22 @@ class SimpleGPT(nn.Module):
         x = self.wte(idx) + self.wpe(pos)
 
         seq_len = x.size(1)
-        causal_mask = nn.Transformer.generate_square_subsequent_mask(
-            seq_len, device=x.device
-        )
+            # causal_mask = nn.Transformer.generate_square_subsequent_mask(
+            #     seq_len, device=x.device
+            # )
+
+        if not hasattr(self, "_causal_mask") or self._causal_mask.size(0) != t:
+            self._causal_mask = nn.Transformer.generate_square_subsequent_mask(
+                t, device=device
+            )
 
         for block in self.h:
-            x = block(x, src_mask=causal_mask, is_causal=True)
+            x = block(
+                x,
+                # src_mask=causal_mask,
+                src_mask=self._causal_mask,
+                is_causal=True
+            )
 
         x = self.ln_f(x)
         logits = self.lm_head(x)

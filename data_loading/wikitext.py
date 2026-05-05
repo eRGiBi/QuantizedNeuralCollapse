@@ -62,6 +62,10 @@ def prepare_wikitext_dataset(tokenizer, batch_size: int, block_size: int = 128):
         attention_mask = torch.stack([item["attention_mask"] for item in batch])
         labels = torch.stack([item["labels"] for item in batch])
 
+        # Ignore padding positions in the loss/accuracy.
+        # (GPT-style: pad_token == eos_token, so without this the model is forced to learn padding.)
+        labels = labels.masked_fill(attention_mask == 0, -100)
+
         return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
     trainloader = DataLoader(
