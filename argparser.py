@@ -42,6 +42,12 @@ def get_args():
                         help='Use indexed (deterministic) char training set).')
     parser.add_argument('--train_split_size', type=int, default=10000,
                         help='Number of training sequences to draw/use for.')
+
+    # LM accuracy ceiling helper: ignore early positions with insufficient context
+    parser.add_argument('--loss_ignore_first_n', type=int, default=None,
+                        help='Ignore the first N token positions in each sequence when computing LM loss/accuracy.')
+    parser.add_argument('--nc_ignore_first_n', type=int, default=None,
+                        help='Ignore the first N token positions in each sequence when extracting samples for NC analysis (defaults to loss_ignore_first_n).')
     
     # Saving
     parser.add_argument('--save', default=False, type=lambda x: bool(strtobool(x)))
