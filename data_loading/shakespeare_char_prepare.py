@@ -152,7 +152,12 @@ class ShakespeareCharDatasetIndexed(Dataset):
 
 
 def prepare_shakespeare_char_dataset(
-        data_dir="data/shakespeare_char", block_size=1024, batch_size=12, ood_filename = "shak_char_ood.bin"
+        data_dir="data/shakespeare_char",
+        block_size=1024,
+        batch_size=12,
+        ood_filename="shak_char_ood.bin",
+        train_split_size: int = 10000,
+        deterministic_train: bool = False,
 ):
     """Prepare Shakespeare character dataset with train and analysis splits """
     train_path = os.path.join(data_dir, "shak_char_train.bin")
@@ -169,10 +174,17 @@ def prepare_shakespeare_char_dataset(
             meta = pickle.load(f)
         vocab_size = meta.get("vocab_size", 65)
 
-    # infinite random sampling
-    trainset = ShakespeareCharDataset(
-        train_path, block_size=block_size, split_size=10000
-    )
+    # Training set:
+    # - random sampling (IterableDataset) is fine for general LM training but makes "train accuracy" noisy
+    # - deterministic indexed dataset is preferable for overfitting/terminal-phase NC measurements
+    if deterministic_train:
+        trainset = ShakespeareCharDatasetIndexed(
+            train_path, block_size=block_size, max_samples=train_split_size
+        )
+    else:
+        trainset = ShakespeareCharDataset(
+            train_path, block_size=block_size, split_size=train_split_size
+        )
 
     # # Analysis set: Indexed dataset for deterministic evaluation
     # analysis_set = ShakespeareCharDatasetIndexed(

@@ -11,14 +11,6 @@ from collapse_analysis.kernels import kernel_stats, log_kernel
 from collapse_analysis.base_neural_collapse_analyzer import BaseNeuralCollapseAnalyzer
 
 
-# class Features:
-#     pass
-#
-# def hook(self, input, output):
-#     Features.value = input[0].clone()
-
-
-# dictionary to store the intermediate activation
 activations = {}
 
 def hook(module, input, output):
