@@ -47,12 +47,20 @@ class SimpleGPT(nn.Module):
 
         self.apply(self._init_weights)
 
+    # def _init_weights(self, module):
+    #     if isinstance(module, nn.Linear):
+    #         # torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+    #         torch.nn.init.kaiming_normal_(
+    #             module.weight, nonlinearity='linear', mode='fan_in'
+    #         )
+    #         if module.bias is not None:
+    #             torch.nn.init.zeros_(module.bias)
+    #     elif isinstance(module, nn.Embedding):
+    #         torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
-            # torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            torch.nn.init.kaiming_normal_(
-                module.weight, nonlinearity='linear', mode='fan_in'
-            )
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):

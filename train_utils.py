@@ -38,7 +38,6 @@ def enable_full_determinism(seed: int, warn_only: bool = False):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-
 def set_seed(seed: int, deterministic: bool = False):
     """Provide reproducible behavior.
     Args:

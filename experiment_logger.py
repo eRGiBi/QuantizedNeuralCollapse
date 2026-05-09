@@ -30,7 +30,7 @@ class ExperimentLogger:
         self.save_to_disk = save_to_disk
         self.metrics = {}
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y.%m.%d_%H.%M.%S")
         self.run_name = f"{timestamp}_{experiment_name}"
 
         if save_to_disk:
@@ -42,7 +42,8 @@ class ExperimentLogger:
             self.results_path = self.exp_dir / "results.json"
 
             # Save initial config
-            self._save_json(self.config, self.config_path)
+            if self.config.get("save", False):
+                self._save_json(self.config, self.config_path)
             logger.info(f"Experiment started at: {self.exp_dir}")
 
         else:
@@ -120,8 +121,7 @@ class ExperimentLogger:
        
             
     def save_model(self, model, filename: str = "model.pth"):
-        """Save a PyTorch model to the experiment directory.
-        """
+        """Save a PyTorch model to the experiment directory."""
         model_path = self.exp_dir / filename
         torch.save(model.state_dict(), model_path)
         

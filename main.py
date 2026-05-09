@@ -6,11 +6,14 @@ from contextlib import nullcontext
 
 from datetime import datetime
 import random
+
+import datasets
 import numpy as np
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import transformers
 from sympy.strategies.core import switch
 
 import plotter
@@ -30,13 +33,21 @@ from torch.distributed import init_process_group, destroy_process_group
 
 def main():
 
+    now = datetime.now().strftime("%m.%d.%Y_%H.%M.%S")
+
     args = get_args()
     device = torch.device(
         "cuda" if torch.cuda.is_available() and args.device == "cuda" else "cpu"
     )
+    transformers.utils.logging.set_verbosity_info()
+    datasets.utils.logging.set_verbosity(5)
+    transformers.utils.logging.set_verbosity(5)
+    transformers.utils.logging.enable_default_handler()
+    transformers.utils.logging.enable_explicit_format()
 
     # Seeding
     set_seed(args.seed)
+    rng = torch.Generator().manual_seed(args.seed)
 
     enable_full_determinism(args.seed, args.deterministic)
 
@@ -69,39 +80,37 @@ def main():
         "epochs": 50,
         "lr": 0.001,
         "scheduler": None,
-        "weight_decay": 0, #5e-4,
+        "weight_decay": 5e-4,
         "model": "simple_cnn",
         "pretrained": True, # Only for downloaded models
         "dataset": "CIFAR10",
-        "nc_freq": 5, # NC analysis every X epochs
-        "criterion": str(nn.CrossEntropyLoss()),
+        "nc_freq": 10,
+        "val_freq": 5,
+        "criterion": "cross_entropy",
         "device": device,
-        "now": datetime.now().strftime("%m.%d.%Y_%H.%M.%S"),
+        "now": now,
         "save": False
     }
 
     if vars(args)["task"] == "nlp":
         config.update(
             {
-                "vocab_size": 64,
-                "num_classes": 64,
-                "n_embd": 168,
-                "n_layer": 16,
-                "n_head": 8,
-                "batch_size": 32,
+                # "vocab_size": 64,
+                # "num_classes": 64,
+                "n_embd": 192,
+                "n_layer": 8,
+                "n_head": 16,
+                "batch_size": 64,
                 "seq_length": 128,
                 "block_size": 128,
                 "epochs": 5,
                 "nc_freq": 1,
-                "max_samples_for_nc": 200,  # Limit samples for NC analysis
+                "max_samples_for_nc": 50_000,  # Limit samples for NC analysis
                 "min_samples_per_class": 5,  # Minimum samples per token
                 "grad_accumulation_steps": 1,
-                "clip_grad": True,
-                "max_grad_norm": 1.0,
-
-                # Ignore early positions where the model has too little context inside the window.
-                # This removes an intrinsic accuracy ceiling (often ~97–99%) caused by context collisions
-                # at the very beginning of each randomly-windowed sequence.
+                "clip_grad": False,
+                # "max_grad_norm": 1.0,
+                "weight_decay": 0.01,
                 "loss_ignore_first_n": 64,
                 "nc_ignore_first_n": 64,
             }
@@ -109,16 +118,17 @@ def main():
 
     args_dict = {k: v for k, v in vars(args).items() if v is not None}
     config.update(args_dict)
+    config["rng"] = str(rng)
 
     # config["dtype"] = PRECISION_MAP.get(config["precision"], torch.float32)
-
-
 
     logger = ExperimentLogger(config)
 
     # Data Loading
     dataset_loader = DatasetLoader()
-    train_loader, validation_loader, ood_loader,  config['num_classes'] = dataset_loader.get_data(config)
+    train_loader, validation_loader, ood_loader,  config['num_classes'] = dataset_loader.get_data(
+        config, rng=rng
+    )
 
     if config.get("task") == "nlp": config["vocab_size"] = int(config["num_classes"])
 
@@ -145,7 +155,7 @@ def main():
                 model.parameters(),
                 lr=config['lr'],
                 momentum=0.9,
-                weight_decay=0.0,
+                weight_decay=config["weight_decay"],
             )
         case 'adam':
             optimizer = optim.Adam(
@@ -154,29 +164,19 @@ def main():
                 betas=(0.9, 0.999),
                 eps=1e-08,
                 amsgrad=False,
-                weight_decay=0.0,
+                weight_decay=config["weight_decay"],
                 decoupled_weight_decay=True,
             )
         case 'adamw':
             optimizer = torch.optim.AdamW(
                 model.parameters(),
                 lr=config["lr"],
-                weight_decay=0.0,
+                weight_decay=config["weight_decay"],
                 betas=(0.9, 0.95)
             )
     config["optimizer"] = str(optimizer)
 
-    # def _init_weights(module):
-    #     if isinstance(module, nn.Linear):
-    #         torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-    #         if module.bias is not None:
-    #             torch.nn.init.zeros_(module.bias)
-    #     elif isinstance(module, nn.Embedding):
-    #         torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-    #
-    # model.apply(_init_weights)
-
-    match config.get("scheduler_type").lower():
+    match config.get("scheduler_type", "step"):
 
         case 'cosine':
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -191,17 +191,17 @@ def main():
                 scheduler = optim.lr_scheduler.MultiStepLR(
                     optimizer, milestones=milestones, gamma=0.1
                 )
-            else:
+        case 'manual':
                 scheduler = optim.lr_scheduler.MultiStepLR(
                     optimizer,
                     [
-                        100,
+                        80,
+                        # 100,
                         150,
+                        200,
                     ],
-                    0.3
+                    0.1
                 )
-        case _:
-            scheduler = None
     config["scheduler"] = scheduler
 
     # Training
@@ -228,11 +228,25 @@ def main():
             config[key] = str(item)
         logger.update_config(config)
 
-    # analyzer = ModelAnalyzer(trained_model, config, logger)
-    # results = analyzer.run_all(train_loader, validation_loader, ood_loader, criterion)
-    # print("\nFinal Analysis Results:")
-    # for metric, value in results.items():
-    #     print(f"{metric}: {value:.4f}")
+        logger.save_model(trained_model, "final_model.pt")
+
+    analyzer = ModelAnalyzer(trained_model, config, logger)
+    results = analyzer.run_all(train_loader, validation_loader, ood_loader, criterion)
+    print("\nFinal Analysis Results:")
+    for metric, value in results.items():
+        if isinstance(value, dict):
+            print(f"{metric}:")
+            for k, v in value.items():
+                if isinstance(v, float):
+                    print(f"  {k}: {v:.4f}")
+                else:
+                    print(f"  {k}: {v}")
+        elif isinstance(value, float):
+            print(f"{metric}: {value:.4f}")
+        else:
+            print(f"{metric}: {value}")
+
+    analyzer.plot_all()
 
     # print(trained_model)
     # print(model.modules())
