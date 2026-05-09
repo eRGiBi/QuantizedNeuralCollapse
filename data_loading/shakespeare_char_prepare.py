@@ -91,7 +91,7 @@ class ShakespeareCharDataset(IterableDataset):
         self.data_len = len(data)
         del data
 
-        self.n_samples = self.data_len - self.block_size - 1
+        self.n_samples = max(0, self.data_len - self.block_size - 1)
 
     def __len__(self):
         return self.n_samples
@@ -131,7 +131,7 @@ class ShakespeareCharDatasetIndexed(Dataset):
         self.data_len = len(data)
         del data
 
-        self.n_samples = self.data_len - self.block_size - 1
+        self.n_samples = max(0, self.data_len - self.block_size - 1)
         if max_samples is not None:
             self.n_samples = min(self.n_samples, max_samples)
 

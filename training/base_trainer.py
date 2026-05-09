@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast, GradScaler
 
 from experiment_logger import ExperimentLogger
 from quantization.q_controller import PRECISION_MAP
@@ -49,14 +50,15 @@ class BaseModelTrainer(ABC):
         Returns:
             nn.Module: The trained model.
         """
-        from torch.cuda.amp import autocast, GradScaler
-
         # scaler = GradScaler()
 
         train_loader = self.train_loader
+        val_loader = self.validation_loader
+        ood_loader = self.ood_loader
 
         epochs = self.config["epochs"]
         analysis_freq = self.config["nc_freq"]
+        val_freq = self.config.get("val_freq")
 
         # total_step = len(batch)
         # log_line = lambda epochs, i: f"Epoch [{epoch + 1}/{n_epochs}], Step [{i + 1}/{total_step}]"
@@ -65,7 +67,6 @@ class BaseModelTrainer(ABC):
 
         for epoch in range(epochs):
             self.model.to(self.device)
-
             self.model.train()
 
             running_loss, correct, total = 0.0, 0, 0
@@ -76,6 +77,8 @@ class BaseModelTrainer(ABC):
                 leave=True,
                 dynamic_ncols=True,
             )
+
+            optimizer.zero_grad(set_to_none=True)
 
             for i, batch_data in enumerate(progress_bar):
 
@@ -90,25 +93,22 @@ class BaseModelTrainer(ABC):
                     continue
 
                 # Gradient accumulation
-                # loss = loss / self.grad_accumulation_steps
+                loss_scaled = loss / max(1, self.grad_accumulation_steps)
+                loss_scaled.backward()
 
-                loss.backward()
-                # scaler.scale(loss).backward()
+                do_step = ((i + 1) % max(1, self.grad_accumulation_steps) == 0)
+                if do_step:
+                    # Gradient clipping
+                    if self.config.get("clip_grad", False):
+                        torch.nn.utils.clip_grad_norm_(
+                            self.model.parameters(), self.config.get("max_grad_norm", 1.0)
+                        )
 
+                    optimizer.step()
+                    optimizer.zero_grad(set_to_none=True)
 
-                # if (i + 1) % self.grad_accumulation_steps == 0:
-                #     # Gradient clipping
-                #     if self.config.get("clip_grad", False):
-                #         torch.nn.utils.clip_grad_norm_(
-                #             self.model.parameters(), self.config.get("max_grad_norm", 1.0)
-                #         )
-
-                optimizer.step()
-                # scaler.step(optimizer)
-                # scaler.update()
-
-                optimizer.zero_grad()
-                running_loss += loss.item() * self.grad_accumulation_steps
+                # Track unscaled loss for logging
+                running_loss += loss.item()
                 correct += batch_correct
                 total += batch_total
 
@@ -120,14 +120,49 @@ class BaseModelTrainer(ABC):
                         loss=f"{current_loss:.3f}", acc=f"{current_acc:.2f}%"
                     )
 
-            # final epoch metrics
-            epoch_loss = running_loss / len(train_loader)
+            # Flush remainder gradients if epoch ended mid-accumulation
+            if len(train_loader) % max(1, self.grad_accumulation_steps) != 0:
+                if self.config.get("clip_grad", False):
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.config.get("max_grad_norm", 1.0)
+                    )
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+
+            # Epoch metrics
+            epoch_loss = running_loss / max(1, len(train_loader))
             epoch_acc = 100.0 * correct / total
+
+            val_loss = float('nan')
+            val_acc = float('nan')
+
+            if (epoch + 1) % val_freq == 0 or (epoch + 1) == epochs:
+                self.model.eval()
+                val_running_loss, val_correct, val_total = 0.0, 0, 0
+
+                with torch.no_grad():
+                    for val_batch_data in val_loader:
+                        val_outputs, val_labels = self._process_batch(val_batch_data)
+                        v_loss, v_batch_correct, v_batch_total = self._compute_loss_and_accuracy(
+                            val_outputs, val_labels, criterion
+                        )
+
+                        if v_loss is not None:
+                            val_running_loss += v_loss.item()
+                            val_correct += v_batch_correct
+                            val_total += v_batch_total
+
+                if val_total > 0:
+                    val_loss = val_running_loss / max(1, len(val_loader))
+                    val_acc = 100.0 * val_correct / val_total
+                    print(f"Validation - Loss: {val_loss:.4f}, Accuracy: {val_acc:.2f}%")
 
             epoch_log_data = {
                 "epoch": epoch + 1,
                 "train_loss": epoch_loss,
                 "train_accuracy": epoch_acc,
+                "val_loss": val_loss,
+                "val_accuracy": val_acc,
                 "learning_rate": (
                     scheduler.get_last_lr()[0]
                     if scheduler is not None
@@ -152,8 +187,8 @@ class BaseModelTrainer(ABC):
             }
 
             # Perform neural collapse analysis
-            if (epoch + 1) % analysis_freq == 0 or (epoch + 1) == epochs:
-                print(f"\nRunning neural collapse analysis...")
+            if (epoch + 1) % analysis_freq == 0 or (epoch + 1) == epochs or epoch == 0:
+                print(f"\nRunning neural collapse analysis")
 
                 nc_metrics = self.nc_analyzer.analyze(
                     self.model,

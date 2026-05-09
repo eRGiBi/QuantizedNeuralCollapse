@@ -32,41 +32,98 @@ class LanguageTrainer(BaseModelTrainer):
         # Dataloader yields (input_ids, labels) tuples
         if isinstance(batch_data, (tuple, list)):
             x, y = batch_data
+            attention_mask = None
+            # Most of our in-repo char datasets already return next-token labels (y = x shifted by 1)
+            labels_already_shifted = True
         else:
             # Dict-style fallback
             x = batch_data["input_ids"]
             y = batch_data.get("labels", x.clone())
+            attention_mask = batch_data.get("attention_mask", None)
+            # HF-style convention: labels are aligned with inputs, trainer performs the shift.
+            labels_already_shifted = False
 
         x = x.to(self.device)
         y = y.to(self.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.device)
 
         logits = self.model(x)  # (B, T, vocab_size) — single forward pass
 
-        return logits, y
+        # Pack extra info into a dict so BaseModelTrainer doesn't need changes.
+        return logits, {
+            "labels": y,
+            "attention_mask": attention_mask,
+            "labels_already_shifted": labels_already_shifted,
+        }
 
     def _compute_loss_and_accuracy(self, logits, labels, criterion):
-        """Next-token prediction loss and accuracy with shifted targets."""
+        """Next-token prediction loss and accuracy.
+
+        Supports two label conventions:
+        - tuple/list batches (x, y): y is already next-token labels (shifted by 1)
+        - dict batches: labels are aligned with input_ids and must be shifted here
+        """
         B, T, C = logits.shape
 
-        # Shift logits and labels for next-token prediction
-        shift_logits = logits[..., :-1, :].contiguous()     # (B, T-1, C)
-        shift_labels = labels[..., 1:].contiguous()         # (B, T-1)
+        attention_mask = None
+        labels_already_shifted = None
+
+        if isinstance(labels, dict):
+            attention_mask = labels.get("attention_mask", None)
+            labels_already_shifted = labels.get("labels_already_shifted", None)
+            labels = labels.get("labels")
+
+        if labels is None:
+            return None, 0, 0
+
+        if labels_already_shifted is None:
+            # Default to shifting, unless overridden by config.
+            labels_already_shifted = bool(self.config.get("labels_already_shifted", False))
+
+        if labels_already_shifted:
+            # logits[t] predicts labels[t] (next token), including the last position.
+            shift_logits = logits.contiguous()          # (B, T, C)
+            shift_labels = labels.contiguous()          # (B, T)
+            shift_attn = attention_mask
+        else:
+            # HF-style: labels are aligned with inputs; predict the next token.
+            shift_logits = logits[..., :-1, :].contiguous()   # (B, T-1, C)
+            shift_labels = labels[..., 1:].contiguous()       # (B, T-1)
+            shift_attn = attention_mask[..., 1:].contiguous() if attention_mask is not None else None
+
+        # Optionally ignore the first N positions in each sequence.
+        # Rationale: when training on random windows, early positions have short context
+        # (missing tokens before the window start), making next-token labels ambiguous.
+        # This can create an irreducible error floor (~97-99%) even when the model has
+        # enough capacity to memorize. Masking early positions is a standard LM trick.
+        ignore_first_n = int(self.config.get("loss_ignore_first_n", 0))
 
         # Flatten for loss computation
         shift_logits_flat = shift_logits.view(-1, C)
         shift_labels_flat = shift_labels.view(-1)
 
-        # Ignore padding / masked positions
+        # Build a flat position index aligned with shift_labels_flat
+        seq_len_eff = shift_labels.shape[1]
+        if ignore_first_n >= seq_len_eff:
+            ignore_first_n = max(0, seq_len_eff - 1)
+        pos = torch.arange(seq_len_eff, device=shift_labels.device).unsqueeze(0).expand(B, -1)
+        pos_flat = pos.reshape(-1)
+
         valid_mask = shift_labels_flat != -100
+        if shift_attn is not None:
+            valid_mask = valid_mask & (shift_attn.view(-1) != 0)
+
+        if ignore_first_n > 0:
+            valid_mask = valid_mask & (pos_flat >= ignore_first_n)
+
         if valid_mask.sum() == 0:
             return None, 0, 0
 
-        loss = criterion(
-            shift_logits_flat[valid_mask], shift_labels_flat[valid_mask]
-        )
+        loss = criterion(shift_logits_flat[valid_mask], shift_labels_flat[valid_mask])
 
-        # Accuracy on the SAME shifted positions as the loss
-        _, predicted = shift_logits_flat[valid_mask].max(dim=1)
+        # Accuracy on the SAME positions as the loss
+        predicted = shift_logits_flat[valid_mask].argmax(dim=1)
         correct = predicted.eq(shift_labels_flat[valid_mask]).sum().item()
         total = valid_mask.sum().item()
 

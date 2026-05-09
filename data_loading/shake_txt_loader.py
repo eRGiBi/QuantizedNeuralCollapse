@@ -13,7 +13,7 @@ class CharDataset(Dataset):
         self.block_size = block_size
 
     def __len__(self):
-        return len(self.data) - self.block_size
+        return max(0, len(self.data) - self.block_size)
 
     def __getitem__(self, idx):
         chunk = self.data[idx:idx + self.block_size + 1]
@@ -57,10 +57,13 @@ def prepare_text_char_dataset(
     data = torch.tensor(encode(text), dtype=torch.long)
 
     # Split into Train and Val, test
-    n = int(config["train_val_test_split"][0] * len(data))
-    train_data = data[:n]
-    val_data = data[n:config["train_val_test_split"][1] * len(data)]
-    ood_data = data[config["train_val_test_split"][1] * len(data):]
+    split = config.get("train_val_test_split", [0.8, 0.1, 0.1])
+    n1 = int(split[0] * len(data))
+    n2 = int((split[0] + split[1]) * len(data))
+    
+    train_data = data[:n1]
+    val_data = data[n1:n2]
+    ood_data = data[n2:]
 
     block_size = config.get("block_size")
 
@@ -78,5 +81,3 @@ def prepare_text_char_dataset(
         vocab_size
     )
     # return train_data, val_data, ood_data, vocab_size
-
-
