@@ -1,5 +1,8 @@
+import math
 from typing import Dict, Tuple
+import traceback
 
+import numpy as np
 from tqdm import tqdm
 
 import torch
@@ -7,12 +10,24 @@ import torch.nn.functional as F
 from torch import nn
 
 from collapse_analysis.kernels import kernel_grid, log_kernel, riesz_kernel
-# from collapse_analysis.measure import (
-#     distance_norms, interference_grid,
-#                                      mean_norms, self_duality_error,
-#                                      similarities, simplex_etf_error,
-#                                      variability_cdnv
-# )
+from collapse_analysis.nc_paper_metrics import (
+    distance_norms,
+    interference_grid,
+    mean_norms,
+    self_duality_error,
+    similarities,
+    simplex_etf_error,
+    variability_cdnv
+)
+
+from training.accumulators import (
+    CovarAccumulator,
+    DecAccumulator,
+    MeanAccumulator,
+    VarNormAccumulator
+)
+
+from collapse_analysis.kernels import kernel_stats, log_kernel
 
 from collapse_analysis.base_neural_collapse_analyzer import BaseNeuralCollapseAnalyzer
 
@@ -22,6 +37,7 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
 
     Compatible with Pytorch transformers.
     """
+
     def __init__(self, ood_loader, config):
 
         self.max_samples = config["max_samples_for_nc"]
@@ -43,13 +59,14 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             ood_loader,
             device,
     ):
-        """"""
+        """Perform neural collapse analysis on the given model with data loaders."""
         model.eval()
 
+        nc_metrics = {}
+
         try:
-            # Extract embeddings, labels, and logits
             embeddings, labels, logits = self._extract_embeddings_and_logits(
-                model, ood_loader , self.max_samples
+                model, train_loader, self.max_samples
             )
 
             # Filter rare classes
@@ -61,21 +78,17 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             labels = labels.to(device)
             logits = logits.to(device)
 
-            # Compute class means
             M, mG = self.compute_class_means(embeddings, labels)
-
-            # Compute NC metrics
-            nc_metrics = {}
 
             # NC1
             nc1_metrics = self.nc1_within_class_variability(embeddings, labels, M)
             nc_metrics.update(nc1_metrics)
 
             # NC2
-            nc2_metrics = self.nc2_hyperspherical_uniformity(M, mG)
+            nc2_metrics = self.nc2_hyperspherical_uniformity_ling(M, mG)
             nc_metrics.update(nc2_metrics)
 
-            # NC3: Requires classifier weights
+            # NC3
             try:
                 # For nanoGPT: model.lm_head.weight
                 if hasattr(model, "lm_head"):
@@ -91,31 +104,31 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
 
                 if W is not None:
                     W = W.to(device)
-                    nc3_metrics = self.nc3_self_duality(W, M, mG)
+                    nc3_metrics = self.nc3_self_duality_ling(W, M, mG)
                     nc_metrics.update(nc3_metrics)
                 else:
-                    nc_metrics.update({"nc3_dual_err": float("nan"), "nc3u_uni_dual": float("nan")})
+                    nc_metrics.update(
+                        {"nc3_dual_err": float("nan"), "nc3u_uni_dual": float("nan")}
+                    )
 
             except Exception as e:
                 print(f"NC3 computation failed: {e}")
                 nc_metrics.update({"nc3_dual_err": float("nan"), "nc3u_uni_dual": float("nan")})
 
             # NC4
-            nc4_metrics = self.nc4_classifier_agreement(embeddings, labels, logits, M)
+            nc4_metrics = self.nc4_classifier_agreement_ling(embeddings, labels, logits, M)
             nc_metrics.update(nc4_metrics)
 
-            # Placeholder for NC5 (OOD detection - requires separate implementation)
-            nc_metrics["nc5_ood_dev"] = float("nan")
+            # NC5 OOD detection
+            # nc_metrics["nc5_ood_dev"] = float("nan")
 
             return nc_metrics
 
         except Exception as e:
             print(f"Neural collapse analysis failed: {e}")
-            import traceback
 
             traceback.print_exc()
 
-            # Return nan values on failure
             return {
                 "nc1_pinv": float("nan"),
                 "nc1_svd": float("nan"),
@@ -148,17 +161,10 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
         return logits.argmax(dim=-1)
 
 
-
     def _extract_embeddings_and_logits(
             self, model: nn.Module, dataloader, max_samples: int
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Extract last-layer embeddings, labels, and logits from the model.
-
-        Returns:
-            embeddings: (N, D) last-layer features
-            labels: (N,) true next-token labels
-            logits: (N, vocab_size) model predictions
-        """
+    ):
+        """Extract last-layer embeddings, labels, and logits from the model."""
         model.eval()
 
         all_embeddings = []
@@ -174,7 +180,6 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             # Store the output of the last layer before LM head
             embeddings_cache.append(output.detach())
 
-        # Register hook on the appropriate layer
         hook_handle = None
 
         if hasattr(model, "transformer") and hasattr(model.transformer, "ln_f"):
@@ -223,6 +228,15 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
 
                 inputs = inputs.to(self.device)
                 targets = targets.to(self.device)
+
+                # Optional: ignore the first N positions in each sequence.
+                # This mirrors training-time masking to avoid short-context ambiguity.
+                ignore_first_n = int(
+                    self.config.get(
+                        "nc_ignore_first_n",
+                        self.config.get("loss_ignore_first_n", 0),
+                    )
+                )
 
                 # Clear cache
                 embeddings_cache.clear()
@@ -275,6 +289,20 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
                 else:
                     targets_flat = targets
 
+                # Flat local positions aligned with targets_flat
+                if len(targets.shape) == 2:
+                    bsz, seq_len = targets.shape
+                    if ignore_first_n >= seq_len:
+                        ignore_first_n = max(0, seq_len - 1)
+                    pos_flat = (
+                        torch.arange(seq_len, device=targets.device)
+                        .unsqueeze(0)
+                        .expand(bsz, -1)
+                        .reshape(-1)
+                    )
+                else:
+                    pos_flat = None
+
                 # Ensure shapes match
                 min_len = min(
                     batch_embeddings.shape[0], logits_flat.shape[0], targets_flat.shape[0]
@@ -282,9 +310,14 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
                 batch_embeddings = batch_embeddings[:min_len]
                 logits_flat = logits_flat[:min_len]
                 targets_flat = targets_flat[:min_len]
+                if pos_flat is not None:
+                    pos_flat = pos_flat[:min_len]
 
                 # Filter out padding tokens if any (typically -100 or pad_token_id)
                 valid_mask = (targets_flat != -100) & (targets_flat >= 0)
+
+                if ignore_first_n > 0 and pos_flat is not None:
+                    valid_mask = valid_mask & (pos_flat >= ignore_first_n)
 
                 if valid_mask.any():
                     batch_embeddings = batch_embeddings[valid_mask]
@@ -384,10 +417,19 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
         return M, mG
 
     def nc1_within_class_variability(
-            self, embeddings: torch.Tensor, labels: torch.Tensor, M: torch.Tensor
+            self,
+            embeddings: torch.Tensor,
+            labels: torch.Tensor,
+            M: torch.Tensor
     ) -> Dict[str, float]:
-        """
-        NC1: Measure within-class variability collapse.
+        """NC1: Measure within-class variability collapse.
+
+        V = nc_stats.vars_accum.compute(indices)[0]
+        update_df(df, "cdnv", variability_cdnv(V, M, 2, args.tile_size), iden)
+
+            kernel_grid = class_dist_norm_vars(V_norms, M, dist_exp, tile_size)
+            avg = symm_reduce(kernel_grid, pt.sum)
+            variability_cdnv = avg.item()
 
         Returns multiple NC1 metrics:
         - cdnv: Collapse Distance to class means (normalized variance)
@@ -423,8 +465,8 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
         return {
             "nc1_cdnv": cdnv,
             "nc1_quot": collapse_ratio,
-            "nc1_pinv": cdnv,  # Simplified version
-            "nc1_svd": cdnv,  # Simplified version
+            # "nc1_pinv": cdnv,  # Simplified version
+            # "nc1_svd": cdnv,  # Simplified version
         }
 
     def nc2_hyperspherical_uniformity(
@@ -437,13 +479,14 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
         Returns:
         - etf_error: Deviation from Simplex ETF
         - norm variance: Are class means equinorm?
+        - log distance variance: Are pairwise distances uniform (log kernel)?
         """
         M_centered = M - mG
         C = M_centered.shape[0]
 
         # Check equinorm
-        norms = torch.norm(M_centered, dim=1)
-        norm_var = norms.var().item()
+        norms = torch.linalg.matrix_norm(M_centered, dim=1)
+        # norm_var = norms.var().item()
 
         # Check equiangular (Simplex ETF)
         M_normalized = F.normalize(M_centered, p=2, dim=1)
@@ -468,14 +511,63 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             "nc2g_log": log_dist_var.item(),
         }
 
+    def nc2_hyperspherical_uniformity_ling(
+            self,
+            M: torch.Tensor,
+            mG: torch.Tensor
+    ) -> Dict[str, float]:
+        """
+        NC2: Measure hyperspherical uniformity using the Kothapalli (2023)
+        Structure Error logic as a drop-in replacement.
+        """
+        M_centered = M - mG
+        C = M_centered.shape[0]
+        device = M.device
+
+        # --- Kothapalli (2023) Structure Error Logic ---
+        # 1. Compute the Gram Matrix (K, K)
+        # Using .mT (matrix transpose) for PyTorch 2.0+ compatibility
+        struct = M_centered @ M_centered.mT
+
+        # 2. Normalize the entire Gram matrix by its Frobenius norm
+        frob_norm = torch.linalg.matrix_norm(struct)
+        struct = struct / (frob_norm + 1e-8)
+
+        # 3. Apply the "Ideal ETF" shifts
+        # Ideal Off-diagonal in normalized Gram: -1 / (C * sqrt(C - 1))
+        # Ideal Diagonal in normalized Gram: sqrt(C - 1) / C
+        val_off = 1.0 / (C * np.sqrt(C - 1))
+        val_diag = np.sqrt(C - 1) / C
+
+        # We add the off-diagonal constant to the whole matrix
+        # Then subtract the sum of (diag_ideal + off_diag_ideal) from the diagonal
+        # to account for the fact that the diagonal was also shifted by val_off.
+        struct_diff = struct + val_off
+        struct_diff.diagonal().sub_(val_diag + val_off)
+
+        # The ETF error is the Frobenius norm of the difference
+        etf_error = torch.linalg.matrix_norm(struct_diff).item()
+
+        # --- Distance-based metrics (kept for drop-in compatibility) ---
+        # We still need these to fill the "nc2g_dist" and "nc2g_log" keys
+        M_normalized = F.normalize(M_centered, p=2, dim=1)
+        pairwise_dists = torch.cdist(M_normalized, M_normalized)
+        triu_idx = torch.triu_indices(C, C, offset=1, device=device)
+        triu_dists = pairwise_dists[triu_idx[0], triu_idx[1]]
+
+        return {
+            "nc2_etf_err": etf_error,  # Kothapalli Structure Error
+            "nc2g_dist": triu_dists.var().item(),  # Distance variance
+            "nc2g_log": torch.log(triu_dists + 1e-8).var().item(),  # Log distance var
+        }
+
     def nc3_self_duality(
             self,
             W: torch.Tensor,
             M: torch.Tensor,
             mG: torch.Tensor,
     ) -> Dict[str, float]:
-        """
-        NC3: Measure alignment between classifier weights and class means.
+        """NC3: Measure alignment between classifier weights and class means.
 
         W: (C, D) classifier weight matrix
         M: (C, D) class means
@@ -496,6 +588,33 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
 
         return {
             "nc3_dual_err": dual_error.item(),
+            "nc3u_uni_dual": uniform_dual.item(),
+        }
+
+    def nc3_self_duality_ling(
+            self,
+            W: torch.Tensor,
+            M: torch.Tensor,
+            mG: torch.Tensor,
+    ) -> Dict[str, float]:
+        """NC3: Measure alignment between classifier weights and class means.
+        Uses Kothapalli (2023) structure error for dual_error.
+
+        W: (C, D) classifier weight matrix
+        M: (C, D) class means
+        """
+        # Call the existing self_duality_error which wraps structure_error
+        dual_error = self_duality_error(W, M.to(W.dtype), mG.to(W.dtype))
+
+        M_centered = M - mG
+        W_centered = W - W.mean(dim=0)
+        M_norm = F.normalize(M_centered, p=2, dim=1)
+        W_norm = F.normalize(W_centered, p=2, dim=1)
+        cosine_sim = (M_norm * W_norm).sum(dim=1)
+        uniform_dual = cosine_sim.var()
+
+        return {
+            "nc3_dual_err": dual_error,
             "nc3u_uni_dual": uniform_dual.item(),
         }
 
@@ -521,109 +640,57 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
 
         return {"nc4_agree": agreement.item()}
 
-    def analyze(
+    def nc4_classifier_agreement_ling(
             self,
-            model: nn.Module,
-            train_loader,
-            validation_loader,
-            ood_loader,
-            device: str,
-    ):
-        """Return dict with all NC metrics."""
-        model.eval()
+            embeddings: torch.Tensor,
+            labels: torch.Tensor,
+            logits: torch.Tensor,
+            M: torch.Tensor,
+    ) -> Dict[str, float]:
+        """
+        NC4: Agreement between learned classifier and nearest-class-mean classifier.
+        Computes decisions matching DecAccumulator logic, including FAISS support.
+        """
+        # Linear classifier decisions
+        learned_preds = logits.argmax(dim=-1)
 
+        # Nearest-class center (NCC) decisions
+        use_faiss = False
         try:
-            # Extract embeddings, labels, and logits
-            embeddings, labels, logits = self._extract_embeddings_and_logits(
-                model, ood_loader, self.max_samples
-            )
-            # Filter rare classes
-            embeddings, labels, logits, valid_classes = self._filter_rare_classes(
-                embeddings, labels, logits
-            )
+            from faiss import IndexFlatL2
+            d_vectors = M.shape[1]
+            index = IndexFlatL2(d_vectors)
+            index.add(M.cpu().numpy())
+            use_faiss = True
+        except (ImportError, ModuleNotFoundError):
+            pass
 
-            embeddings = embeddings.to(device)
-            labels = labels.to(device)
-            logits = logits.to(device)
+        if use_faiss:
+            _, I = index.search(embeddings.cpu().numpy(), 1)
+            ncm_preds = torch.tensor(I).to(embeddings.device).squeeze()
+        else:
+            # Manual fallback mimicking DecAccumulator exactly
+            dots = torch.inner(embeddings, M)  # (B, K)
+            feats = torch.norm(embeddings, dim=-1) ** 2  # (B)
+            centre = torch.norm(M, dim=-1) ** 2  # (K)
+            dists = feats.unsqueeze(1) + centre.unsqueeze(0) - 2 * dots  # (B, K)
+            ncm_preds = dists.argmin(dim=-1)  # (B)
 
-            # Compute class means
-            M, mG = self.compute_class_means(embeddings, labels)
+        # Count matches between classifiers
+        matches = (learned_preds == ncm_preds)
 
-            # Compute NC metrics
-            nc_metrics = {}
+        # Calculate hits, misses, and agreement
+        hits = matches.sum().item()
+        total_samples = embeddings.shape[0]
+        misses = total_samples - hits
+        agreement = hits / total_samples
 
-            # NC1
-            nc1_metrics = self.nc1_within_class_variability(embeddings, labels, M)
-            nc_metrics.update(nc1_metrics)
+        return {
+            "nc4_agree": agreement,
+            "nc4_hits": hits,
+            "nc4_misses": misses,
+        }
 
-            # NC2
-            nc2_metrics = self.nc2_hyperspherical_uniformity(M, mG)
-            nc_metrics.update(nc2_metrics)
-
-            # NC3: Requires classifier weights
-            try:
-                W = None
-
-                # Try different common architectures
-                if hasattr(model, "lm_head") and hasattr(model.lm_head, "weight"):
-                    # nanoGPT: model.lm_head.weight
-                    W = model.lm_head.weight
-                elif hasattr(model, "transformer") and hasattr(model.transformer, "wte"):
-                    # Weight tying: use token embeddings
-                    W = model.transformer.wte.weight
-                elif hasattr(model, "output") and hasattr(model.output, "weight"):
-                    # Generic output layer
-                    W = model.output.weight
-
-                if W is not None:
-                    # Select only the valid classes we're analyzing
-                    W = W[valid_classes].detach().to(device)
-                    nc3_metrics = self.nc3_self_duality(W, M, mG)
-                    nc_metrics.update(nc3_metrics)
-                else:
-                    print("Warning: Could not find classifier weights for NC3")
-                    nc_metrics.update({
-                        "nc3_dual_err": float("nan"),
-                        "nc3u_uni_dual": float("nan")
-                    })
-
-            except Exception as e:
-                print(f"NC3 computation failed: {e}")
-                import traceback
-                traceback.print_exc()
-                nc_metrics.update({
-                    "nc3_dual_err": float("nan"),
-                    "nc3u_uni_dual": float("nan")
-                })
-
-            # NC4
-            nc4_metrics = self.nc4_classifier_agreement(embeddings, labels, logits, M)
-            nc_metrics.update(nc4_metrics)
-
-            # Placeholder for NC5 (OOD detection - requires separate implementation)
-            nc_metrics["nc5_ood_dev"] = float("nan")
-
-            return nc_metrics
-
-        except Exception as e:
-            print(f"Neural collapse analysis failed: {e}")
-            import traceback
-            traceback.print_exc()
-
-            # Return nan values on failure
-            return {
-                "nc1_pinv": float("nan"),
-                "nc1_svd": float("nan"),
-                "nc1_quot": float("nan"),
-                "nc1_cdnv": float("nan"),
-                "nc2_etf_err": float("nan"),
-                "nc2g_dist": float("nan"),
-                "nc2g_log": float("nan"),
-                "nc3_dual_err": float("nan"),
-                "nc3u_uni_dual": float("nan"),
-                "nc4_agree": float("nan"),
-                "nc5_ood_dev": float("nan"),
-            }
 
     def compute_collapse(self):
         pass
