@@ -2,7 +2,7 @@ from os.path import exists
 from typing import Dict
 
 import torch
-from torch.utils.data import random_split, DataLoader, Dataset, IterableDataset, Subset
+from torch.utils.data import random_split, DataLoader, Dataset, Subset
 import torchvision
 import torchvision.transforms as transforms
 from torchvision.datasets import MNIST, FashionMNIST
@@ -15,6 +15,7 @@ from transformers import AutoTokenizer, TrainingArguments
 from transformers.testing_utils import CaptureLogger
 from transformers.utils import logging
 
+from data_loading.tinystories.tinystories_builder import prepare_tinystories_dataset
 from data_loading.shake_txt_loader import prepare_text_char_dataset
 from data_loading.shakespeare_char_prepare import prepare_shakespeare_char_dataset
 from data_loading.wikitext import prepare_wikitext_dataset
@@ -23,7 +24,7 @@ class DatasetLoader:
     """Load datasets based on specified names and configurations."""
 
     @staticmethod
-    def get_data(config: dict, data_root='./data'):
+    def get_data(config: dict,  rng: torch.Generator, data_root='./data',):
         """Load a chosen dataset."""
         num_classes = config["num_classes"]
 
@@ -137,6 +138,15 @@ class DatasetLoader:
                     if tss > 0 and tss < len(train_set):
                         train_set = Subset(train_set, list(range(tss)))
 
+            case "TINYSTORIES":
+                train_set, val_set, ood_set, num_classes = prepare_tinystories_dataset(
+                    block_size=config.get("block_size", 256),
+                    max_per_class=int(config.get("max_per_class", 5_000)),
+                    val_fraction=float(config.get("val_fraction", 0.05)),
+                    ood_fraction=float(config.get("ood_fraction", 0.05)),
+                    rng=rng,
+                    use_cache=True
+                )
             case _:
                 raise ValueError(f"Dataset is not supported.")
 
