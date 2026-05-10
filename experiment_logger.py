@@ -24,31 +24,55 @@ class ExperimentLogger:
         log_dir: str = "./logs",
         experiment_name: Optional[str] = "exp",
         save_to_disk: bool = True,
+        resume_dir: Optional[str] = None
     ):
         self.config = config or {}
         self.log_data = []
         self.save_to_disk = save_to_disk
         self.metrics = {}
 
-        timestamp = datetime.now().strftime("%Y.%m.%d_%H.%M.%S")
-        self.run_name = f"{timestamp}_{experiment_name}"
-
-        if save_to_disk:
-            self.exp_dir = Path(log_dir) / self.run_name
-            self.exp_dir.mkdir(parents=True, exist_ok=True)
+        if resume_dir and save_to_disk and Path(resume_dir).exists():
+            self.exp_dir = Path(resume_dir)
+            self.run_name = self.exp_dir.name
+            logger.info(f"Resuming experiment at: {self.exp_dir}")
 
             self.config_path = self.exp_dir / "config.json"
             self.metrics_path = self.exp_dir / "metrics.csv"
             self.results_path = self.exp_dir / "results.json"
 
-            # Save initial config
-            if self.config.get("save", False):
-                self._save_json(self.config, self.config_path)
-            logger.info(f"Experiment started at: {self.exp_dir}")
-
+            # Load old log_data
+            if self.metrics_path.exists():
+                df = pd.read_csv(self.metrics_path)
+                self.log_data = df.to_dict('records')
+                if len(self.log_data) > 0:
+                    self.metrics = self.log_data[-1].copy()
+                    
+            if self.config_path.exists():
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    old_config = json.load(f)
+                    # Update without overwriting new ones? Or keep old
+                    old_config.update(self.config)
+                    self.config = old_config
         else:
-            self.exp_dir = None
-            logger.info("Experiment logger running in dry mode (no files will be saved).")
+            timestamp = datetime.now().strftime("%Y.%m.%d_%H.%M.%S")
+            self.run_name = f"{timestamp}_{experiment_name}"
+    
+            if save_to_disk:
+                self.exp_dir = Path(log_dir) / self.run_name
+                self.exp_dir.mkdir(parents=True, exist_ok=True)
+    
+                self.config_path = self.exp_dir / "config.json"
+                self.metrics_path = self.exp_dir / "metrics.csv"
+                self.results_path = self.exp_dir / "results.json"
+    
+                # Save initial config
+                if self.config.get("save", False):
+                    self._save_json(self.config, self.config_path)
+                logger.info(f"Experiment started at: {self.exp_dir}")
+    
+            else:
+                self.exp_dir = None
+                logger.info("Experiment logger running in dry mode (no files will be saved).")
 
     def log_metrics(self, metrics: Dict[str, Any]):
         """

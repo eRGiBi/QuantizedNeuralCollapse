@@ -59,13 +59,22 @@ class BaseModelTrainer(ABC):
         epochs = self.config["epochs"]
         analysis_freq = self.config["nc_freq"]
         val_freq = self.config.get("val_freq")
-
-        # total_step = len(batch)
-        # log_line = lambda epochs, i: f"Epoch [{epoch + 1}/{n_epochs}], Step [{i + 1}/{total_step}]"
+        
+        start_epoch = 0
+        if self.logger.log_data and len(self.logger.log_data) > 0:
+            last_epoch = self.logger.log_data[-1].get("epoch", 0)
+            if last_epoch is not None and isinstance(last_epoch, int):
+                start_epoch = last_epoch
+                print(f"Resuming training from epoch {start_epoch}")
+                
+                # Advance scheduler to catch up if needed
+                if scheduler is not None:
+                    for _ in range(start_epoch):
+                        scheduler.step()
 
         start_time = time.time()
 
-        for epoch in range(epochs):
+        for epoch in range(start_epoch, epochs):
             self.model.to(self.device)
             self.model.train()
 

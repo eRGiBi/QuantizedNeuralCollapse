@@ -144,6 +144,7 @@ class DatasetLoader:
                     max_per_class=int(config.get("max_per_class", 5_000)),
                     val_fraction=float(config.get("val_fraction", 0.05)),
                     ood_fraction=float(config.get("ood_fraction", 0.05)),
+                    seed=config.get("seed"),
                     rng=rng,
                     use_cache=True
                 )
