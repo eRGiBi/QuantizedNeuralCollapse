@@ -29,14 +29,21 @@ Install dependencies specified in the included uv lockfile to in virtual env, fo
 ## Usage
 
 ### With uv:
+
+Computer vision:
 ```bash
     uv run main.py --exp-name test --model simple_cnn --lr 0.0075 --epochs 200 --nc_freq 10 --save t
 
-    uv run main.py --exp-name cnext_tiny --model convnexttiny --pretrained t --dataset CIFAR10  --lr 0.0075 --epochs 100 --nc_freq 5 --save t --seed 325
-    
+    uv run main.py --exp-name cnext_tiny --model convnexttiny --pretrained t --dataset CIFAR10  --lr 0.0075 --epochs 100 --nc_freq 5 --save t --seed 476
 ```
 
 NLP:
 ```bash
-    uv run main.py --exp-name sgptshak_test --task nlp --model simplegpt  --pretrained f --dataset shakespeare_char  --lr 0.0075 --epochs 3 --nc_freq 1 --save f --seed 32551
+    uv run main.py --exp-name sgptshak_test --task nlp --model simplegpt  --pretrained f --dataset shakespeare_char  --lr 0.0075 --epochs 3 --nc_freq 1 --save f --seed 756
+
+    uv run main.py --exp-name tinystories_run --task nlp --model simplegpt --pretrained f --dataset tinystories --lr 0.00575 --scheduler manual --epochs 300 --nc_freq 10 --save t --seed 7324                 
+
+    uv run main.py --exp-name tllama_tsto_run --task nlp --model tinyllama3  --pretrained t --dataset tinystories  --lr 0.00175 --epochs 100 --nc_freq 10 --save t --seed  7324                              
 ```
+
+---
