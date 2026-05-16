@@ -525,15 +525,15 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
         device = M.device
 
         # --- Kothapalli (2023) Structure Error Logic ---
-        # 1. Compute the Gram Matrix (K, K)
+        # Compute the Gram Matrix (K, K)
         # Using .mT (matrix transpose) for PyTorch 2.0+ compatibility
         struct = M_centered @ M_centered.mT
 
-        # 2. Normalize the entire Gram matrix by its Frobenius norm
+        # Normalize the entire Gram matrix by its Frobenius norm
         frob_norm = torch.linalg.matrix_norm(struct)
         struct = struct / (frob_norm + 1e-8)
 
-        # 3. Apply the "Ideal ETF" shifts
+        # Apply the "Ideal ETF" shifts
         # Ideal Off-diagonal in normalized Gram: -1 / (C * sqrt(C - 1))
         # Ideal Diagonal in normalized Gram: sqrt(C - 1) / C
         val_off = 1.0 / (C * np.sqrt(C - 1))
@@ -548,8 +548,8 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
         # The ETF error is the Frobenius norm of the difference
         etf_error = torch.linalg.matrix_norm(struct_diff).item()
 
-        # --- Distance-based metrics (kept for drop-in compatibility) ---
-        # We still need these to fill the "nc2g_dist" and "nc2g_log" keys
+        # --- Distance-based metrics
+        # For "nc2g_dist" and "nc2g_log" keys
         M_normalized = F.normalize(M_centered, p=2, dim=1)
         pairwise_dists = torch.cdist(M_normalized, M_normalized)
         triu_idx = torch.triu_indices(C, C, offset=1, device=device)
@@ -625,9 +625,7 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             logits: torch.Tensor,
             M: torch.Tensor,
     ) -> Dict[str, float]:
-        """
-        NC4: Agreement between learned classifier and nearest-class-mean classifier.
-        """
+        """NC4: Agreement between learned classifier and nearest-class-mean classifier."""
         # Learned classifier predictions
         learned_preds = logits.argmax(dim=1)
 
@@ -647,8 +645,7 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             logits: torch.Tensor,
             M: torch.Tensor,
     ) -> Dict[str, float]:
-        """
-        NC4: Agreement between learned classifier and nearest-class-mean classifier.
+        """NC4: Agreement between learned classifier and nearest-class-mean classifier.
         Computes decisions matching DecAccumulator logic, including FAISS support.
         """
         # Linear classifier decisions
@@ -669,7 +666,6 @@ class LanguageNeuralCollapseAnalyzer(BaseNeuralCollapseAnalyzer):
             _, I = index.search(embeddings.cpu().numpy(), 1)
             ncm_preds = torch.tensor(I).to(embeddings.device).squeeze()
         else:
-            # Manual fallback mimicking DecAccumulator exactly
             dots = torch.inner(embeddings, M)  # (B, K)
             feats = torch.norm(embeddings, dim=-1) ** 2  # (B)
             centre = torch.norm(M, dim=-1) ** 2  # (K)
